@@ -2,9 +2,10 @@
 
 Agente personal de organización para una sola persona. Es una PWA que se instala en el iPhone y habla con un agente de IA que organiza la semana sobre Google Calendar.
 
-> **Estado: fases 1 y 2.**
+> **Estado: fases 1, 2 y 3.**
 > - Fase 1 (núcleo): PWA, chat, capa de IA intercambiable, Google Calendar, calendario semanal animado con historial y deshacer, y foto del horario de trabajo.
 > - Fase 2 (planificación): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
+> - Fase 3 (voz y pendientes): voz con botón, modo solo texto, pendientes, recordatorios y notificaciones push.
 
 ## Índice
 
@@ -58,6 +59,31 @@ Agente personal de organización para una sola persona. Es una PWA que se instal
   - Con "buenas noches", repasa el día siguiente y a qué hora acostarte y levantarte.
   - Los dos se pueden desactivar en Ajustes. Los avisos automáticos por push llegan en la fase 3.
 
+### Fase 3: voz y pendientes
+
+- **Voz con botón**: mantienes pulsado el micro, hablas y sueltas (deslizar hacia arriba cancela). No hay modo llamada.
+  - La PWA graba con MediaRecorder (en iOS, `audio/mp4`) y convierte el audio a WAV de 16 kHz en mono antes de enviarlo (`apps/web/src/lib/recorder.ts`). No se usa el reconocimiento de voz del navegador, que en iOS no es fiable.
+  - El modelo transcribe el audio (`input_audio`) y la transcripción pasa al agente como un mensaje más. En el chat ves lo que entendió.
+  - Las respuestas a una nota de voz se leen en voz alta con la síntesis del navegador (gratis), con voz en español o en inglés según el idioma. Opcionalmente se puede usar la voz del proveedor (`TTS_*`).
+- **Modo solo texto**: interruptor 🔊/🔇 siempre visible arriba. Quita el micrófono, nunca habla y las notificaciones se envían con `silent`. iOS decide si lo respeta: si quieres silencio total, usa también un modo de concentración.
+- **Pendientes** (pestaña Pendientes y herramientas `add_pending`, `close_pending`, `list_pendings`, `snooze_pending`): recordatorios ("recuérdame contestar a Mateo"), tareas del trabajo o la uni, planes a corto y largo plazo, y cumpleaños.
+  - Todo lo cuentas tú por voz o texto. Marlon no lee chats ni correos.
+  - **Insistencia gradual** (`apps/api/src/pendings/nudges.ts`):
+    - El primer aviso llega una hora después de apuntarlo, o a la hora indicada.
+    - Los siguientes llegan cada vez antes (3 h, 2 h, 1 h 30, 1 h…) y con un tono distinto, hasta que dices que ya está.
+    - Nunca avisa en mitad de un turno o una clase, ni a partir de la hora de irte a dormir.
+    - Lo que queda sin hacer se recuerda al día siguiente, como mucho dos veces.
+  - Los cumpleaños avisan una semana antes (configurable) y el mismo día, y se repiten cada año.
+- **Notificaciones push** (`apps/api/src/push`). Un cron cada 5 minutos programa y envía:
+  - El buenos días a la hora de levantarte. Al tocarlo, Marlon te da el resumen.
+  - El repaso de la noche, 45 minutos antes de acostarte.
+  - "Sal a las…", 10 minutos antes de la hora de salida, con la ruta.
+  - Los avisos de los pendientes y los cumpleaños.
+
+  Cada aviso tiene una clave única, así que nunca llega dos veces, y si se retrasa más de 30 minutos se descarta.
+  - Web Push está implementado con WebCrypto (RFC 8291 y VAPID, RFC 8292), sin librerías de Node. Se prueba con los vectores oficiales del RFC 8291 y descifrando con la librería de referencia.
+  - En iOS solo funcionan con la app instalada en la pantalla de inicio (iOS 16.4 o superior). El permiso se pide al tocar "Activar notificaciones" en Ajustes.
+
 ## Arquitectura
 
 ```
@@ -94,12 +120,15 @@ Ver `apps/api/migrations/0001_init.sql`. Tablas principales:
 - `schedule_uploads`: lecturas de la foto pendientes de confirmar.
 - `messages`: historial del chat.
 - `api_cache`: caché del tiempo y de las rutas.
+- `pendings`: recordatorios, tareas, planes y cumpleaños, con el estado de la insistencia del día.
+- `push_subscriptions` y `notifications`: dispositivos suscritos y la cola de avisos.
 - `credentials` y `sessions`: passkeys y sesiones.
 
 ### Herramientas del agente
 
 - Fase 1: `list_events`, `create_event`, `move_event`, `delete_event`, `find_free_slots`, `parse_schedule_photo` y `confirm_schedule_import`.
 - Fase 2: `import_university_calendar`, `find_conflicts`, `plan_gym_week`, `get_sleep_plan`, `get_route`, `get_weather`, `get_daily_briefing` y `get_evening_review`.
+- Fase 3: `add_pending`, `close_pending`, `list_pendings` y `snooze_pending`.
 
 Cada herramienta tiene un esquema zod. Si el modelo envía argumentos que no pasan la validación, recibe el error con una pista y puede corregirse.
 
@@ -233,7 +262,31 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 3. Rellena en Ajustes las direcciones de casa, el trabajo, la uni y el gimnasio, y si hace falta la ciudad con sus coordenadas para el tiempo (por defecto, Turku).
 
-### 5. Acceso
+### 5. Notificaciones push
+
+1. Genera las claves VAPID. El comando imprime los valores, pero no los guarda en ningún archivo.
+
+   ```bash
+   pnpm vapid:generate
+   ```
+
+2. Súbelas como secretos, una por comando:
+
+   ```bash
+   pnpm --filter @marlon/api exec wrangler secret put VAPID_PUBLIC_KEY
+   ```
+
+   ```bash
+   pnpm --filter @marlon/api exec wrangler secret put VAPID_PRIVATE_KEY
+   ```
+
+   ```bash
+   pnpm --filter @marlon/api exec wrangler secret put VAPID_SUBJECT
+   ```
+
+3. En el iPhone, abre Marlon **desde el icono de la pantalla de inicio**, ve a *Ajustes > Activar notificaciones* y pulsa "Enviar una de prueba".
+
+### 6. Acceso
 
 1. Genera un secreto de sesión de al menos 32 caracteres:
 
@@ -261,7 +314,7 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 Una vez registrada la primera passkey, el código ya no basta: para añadir otra hay que estar dentro.
 
-### 6. Publicar
+### 7. Publicar
 
 ```bash
 pnpm deploy
@@ -286,14 +339,17 @@ En el iPhone, abre la URL en Safari, ve a *Compartir > Añadir a pantalla de ini
 Los límites cambian. **Compruébalos en la documentación oficial antes de desplegar.** Esto es lo que condiciona el diseño:
 
 - **Workers (plan gratuito):** el tiempo de CPU por petición es corto. La espera a Google y al modelo no cuenta como CPU, por eso las imágenes se procesan en el navegador. El número de subpeticiones por invocación también está limitado, así que importar un horario solo crea, mueve o borra los turnos que cambian.
-- **D1 y Cron Triggers:** el uso de un solo usuario queda muy por debajo de los límites gratuitos. Marlon usa dos crons: cada 15 minutos y cada 3 horas.
+- **D1 y Cron Triggers:** el uso de un solo usuario queda muy por debajo de los límites gratuitos. Marlon usa dos crons: cada 5 minutos (Google Calendar y notificaciones) y cada 3 horas (calendario de la uni). Por eso un aviso puede llegar hasta 5 minutos tarde.
 - **Routes API:** en la tarifa actual de Google Maps Platform cada SKU tiene llamadas gratuitas al mes (las de nivel Essentials, unas 10 000). Comprueba en la consola qué SKU usan las rutas en transporte público y en bici. Con la caché y sin consultar la bici en invierno, el uso de una persona queda muy por debajo.
 - **Open-Meteo:** gratis para uso no comercial, sin clave, con un uso razonable de unas 10 000 llamadas al día. Marlon guarda la previsión una hora en caché.
 - **Gemini (AI Studio):** los límites de peticiones por minuto y por día dependen del modelo y del proyecto. Los errores 429 se reintentan con espera y, si persisten, Marlon lo dice con naturalidad.
 
 ## Limitaciones de iOS
 
-- Las notificaciones push (fase 3) solo funcionan con la PWA instalada en la pantalla de inicio, en iOS 16.4 o superior.
+- Las notificaciones push solo funcionan con la PWA instalada en la pantalla de inicio, en iOS 16.4 o superior, y el permiso se pide con un toque. Cada push tiene que mostrar una notificación visible: no hay avisos invisibles.
+- El modo silencioso (`silent`) de las notificaciones depende de iOS. Para silencio total en clase o en el trabajo, combínalo con un modo de concentración.
+- La voz del navegador solo puede hablar después de un gesto. Por eso el botón del micro la "desbloquea" al pulsarlo.
+- Las notas de voz se transcriben con el modelo configurado. Si dictas datos económicos y solo hay clave gratuita, van por la capa gratuita. En la fase 4 se pedirá permiso antes de enviar datos económicos escritos o dictados.
 - Una PWA no puede mantener un temporizador exacto con la pantalla bloqueada. Los temporizadores de la fase 5 programarán una notificación push para cada cambio de fase en lugar de depender de un contador en el navegador.
 - iOS congela la app en segundo plano. Al volver, Marlon sincroniza con Google Calendar y anima lo que haya cambiado.
 
@@ -320,7 +376,11 @@ pnpm typecheck
 - `apps/api/test/planning.test.ts`: sueño (8 horas mínimo, avisos) y gimnasio (mañana, huecos justos, sin días seguidos, sin recortar sueño).
 - `apps/api/test/routes-weather.test.ts`: Routes API, hora de salida, caché, estimación, tiempo y bici.
 - `apps/api/test/phase2-tools.test.ts`: herramientas de la fase 2, buenos días, buenas noches y cron de la uni.
+- `apps/api/test/webpush.test.ts`: cifrado Web Push idéntico al ejemplo del RFC 8291, descifrado con la implementación de referencia y JWT de VAPID verificado con `node:crypto`.
+- `apps/api/test/pendings.test.ts`: insistencia gradual (intervalos, sin avisos en turnos ni de noche, máximo por día, vencidos, aplazados) y cumpleaños, incluido el 29 de febrero.
+- `apps/api/test/phase3.test.ts`: planificador y envío de notificaciones, modo solo texto, suscripciones caducadas, nota de voz de punta a punta y rutas de la API.
 - `apps/web/test/week.test.ts`: cálculo de la semana y turnos partidos por la medianoche.
+- `apps/web/test/wav.test.ts`: conversión a WAV (cabecera, mono, remuestreo y base64).
 
 Los tests de la API usan un D1 en memoria sobre `node:sqlite` (`apps/api/test/d1-shim.ts`) con las mismas migraciones.
 
@@ -328,6 +388,6 @@ Los tests de la API usan un D1 en memoria sobre `node:sqlite` (`apps/api/test/d1
 
 1. **Núcleo** (hecha): PWA, chat, capa de IA, Google Calendar, calendario visual y foto del horario.
 2. **Planificación** (hecha): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
-3. Voz y pendientes: voz con botón, modo solo texto, pendientes, recordatorios y push.
+3. **Voz y pendientes** (hecha): voz con botón, modo solo texto, pendientes, recordatorios y push.
 4. Dinero y comida: horas reales y sueldo, gastos, batch cooking, menú y lista de la compra.
 5. Bienestar y lectura: temporizadores, meditación, estiramientos, lectura, memoria y base de conocimiento.
