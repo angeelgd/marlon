@@ -32,6 +32,8 @@ function lastUserText(messages: LlmMessage[]): string {
   return "";
 }
 
+export const MOCK_TRANSCRIPT = "Recuérdame contestar a Mateo";
+
 let counter = 0;
 const call = (name: string, args: object): LlmResponse => ({
   content: null,
@@ -44,6 +46,11 @@ export class MockProvider implements LlmProvider {
 
   async chat(req: LlmRequest): Promise<LlmResponse> {
     if (req.json) return { content: JSON.stringify(MOCK_SCHEDULE_ROWS), toolCalls: [] };
+    // Transcripción: el audio de prueba siempre "dice" lo mismo.
+    const first = req.messages[0];
+    if (first?.role === "user" && Array.isArray(first.content) && first.content.some((p) => p.type === "input_audio")) {
+      return { content: MOCK_TRANSCRIPT, toolCalls: [] };
+    }
 
     const last = req.messages[req.messages.length - 1];
     if (last?.role === "tool") {
@@ -73,6 +80,8 @@ export class MockProvider implements LlmProvider {
           toolCalls: [],
         };
       }
+      if (d.saved?.kind) return { content: `Apuntado: ${d.saved.title}. Te lo iré recordando.`, toolCalls: [] };
+      if (d.closed) return { content: `¡Hecho! Quito "${d.closed.title}" de la lista.`, toolCalls: [] };
       if (Array.isArray(d.sessions)) {
         return {
           content: d.sessions.length
@@ -94,6 +103,14 @@ export class MockProvider implements LlmProvider {
     }
     if (text.includes("buenas noches") || text.includes("good night")) return call("get_evening_review", {});
     if (text.includes("gimnasio") || text.includes("gym")) return call("plan_gym_week", {});
+    const remind = /recu[eé]rdame\s+(.+)/i.exec(lastUserText(req.messages));
+    if (remind) {
+      const title = remind[1]!.replace(/[.!?]+$/, "");
+      return call("add_pending", { kind: "reminder", title: title[0]!.toUpperCase() + title.slice(1) });
+    }
+    if (/\bya\b.*\b(le |lo )?(contest|hice|hecho|está|esta)/.test(text)) {
+      return call("close_pending", { query: text.replace(/\bya\b/, "") });
+    }
     return { content: "Estoy en modo de prueba, pero te leo. ¿Qué organizamos?", toolCalls: [] };
   }
 }

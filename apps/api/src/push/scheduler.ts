@@ -1,0 +1,257 @@
+import type { CalendarEvent, Settings } from "@marlon/shared";
+import type { CalendarService } from "../calendar/service";
+import type { Env } from "../env";
+import { newId } from "../lib/ids";
+import { addDays, localToUtcIso, toLocalIso, toLocalParts } from "../lib/time";
+import { planDeparture } from "../integrations/routes";
+import { getForecast, weatherAt } from "../integrations/weather";
+import { birthdayNotices, nextNudge, type DayFrame } from "../pendings/nudges";
+import { listPendingRows, recordNudge } from "../pendings/store";
+import { planSleep, toCommitments, type Gym } from "../planning/sleep";
+import { sendPush, type KeyPairB64 } from "./webpush";
+
+/**
+ * Notificaciones programadas. El cron (cada 5 min) llama a planNotifications,
+ * que mete en la cola lo que toca (sin duplicar gracias a dedupe_key), y a
+ * dispatchNotifications, que envía lo vencido.
+ */
+
+export interface SchedulerDeps {
+  env: Env;
+  db: D1Database;
+  calendar: CalendarService;
+  settings: Settings;
+  now: number;
+  fetchImpl?: typeof fetch;
+}
+
+export interface QueuedNotification {
+  key: string;
+  kind: string;
+  at: number;
+  title: string;
+  body: string;
+  url?: string;
+}
+
+export async function enqueue(db: D1Database, n: QueuedNotification): Promise<boolean> {
+  const r = await db
+    .prepare(
+      `INSERT OR IGNORE INTO notifications (id, dedupe_key, kind, send_at, title, body, url) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(newId("ntf"), n.key, n.kind, new Date(n.at).toISOString(), n.title, n.body, n.url ?? "/")
+    .run();
+  return (r.meta.changes ?? 0) > 0;
+}
+
+const hhmm = (ms: number, tz: string) => toLocalParts(ms, tz).time;
+const COMMITMENTS: CalendarEvent["kind"][] = ["work_planned", "university", "gym", "marlon", "manual"];
+
+/** Contexto del día: compromisos, hora de levantarse hoy y de acostarse esta noche. */
+async function dayFrame(deps: SchedulerDeps) {
+  const s = deps.settings;
+  const tz = s.timezone;
+  const today = toLocalIso(deps.now, tz).slice(0, 10);
+  const events = await deps.calendar.list(
+    localToUtcIso(`${addDays(today, -1)}T00:00`, tz),
+    localToUtcIso(`${addDays(today, 2)}T00:00`, tz),
+  );
+  const gyms = new Map<string, Gym>();
+  for (const e of events.filter((e) => e.kind === "gym")) {
+    gyms.set(toLocalParts(Date.parse(e.start), tz).date, { start: Date.parse(e.start), end: Date.parse(e.end) });
+  }
+  const [sleepToday, sleepTomorrow] = planSleep([today, addDays(today, 1)], toCommitments(events), s, gyms);
+  const todays = events.filter((e) => !e.allDay && toLocalParts(Date.parse(e.start), tz).date === today);
+  const frame: DayFrame = {
+    date: today,
+    tz,
+    wake: sleepToday!.wake,
+    quietFrom: sleepTomorrow!.bedBefore - s.windDownMin * 60_000,
+    busy: todays.filter((e) => COMMITMENTS.includes(e.kind)).map((e) => ({ start: Date.parse(e.start), end: Date.parse(e.end) })),
+  };
+  return { today, events, todays, frame, bedTonight: sleepTomorrow!.bedBefore };
+}
+
+export async function planNotifications(deps: SchedulerDeps): Promise<number> {
+  const { db, settings: s, now } = deps;
+  const tz = s.timezone;
+  const { today, todays, frame, bedTonight } = await dayFrame(deps);
+  let queued = 0;
+  const add = async (n: QueuedNotification) => {
+    if (await enqueue(db, n)) queued++;
+  };
+
+  // 1. Buenos días, a la hora de levantarse (si no ha pasado hace mucho).
+  if (s.morningBriefing && now >= frame.wake - 10 * 60_000 && now < frame.wake + 2 * 3600_000) {
+    const first = todays.find((e) => COMMITMENTS.includes(e.kind) && Date.parse(e.start) > now);
+    let weather = "";
+    try {
+      const f = await getForecast(db, s, deps.fetchImpl);
+      const w = weatherAt(f, toLocalIso(now, tz));
+      if (w) weather = ` ${Math.round(w.temperature)} °C y ${w.description}.`;
+    } catch {
+      /* sin tiempo no pasa nada */
+    }
+    const body = first
+      ? `Hoy empiezas con ${first.title} a las ${hhmm(Date.parse(first.start), tz)}.${weather} Toca para ver tu día.`
+      : `Hoy no tienes compromisos.${weather} Toca para ver tu día.`;
+    await add({
+      key: `morning:${today}`,
+      kind: "morning",
+      at: Math.max(frame.wake, now),
+      title: "Buenos días ☀️",
+      body,
+      url: `/?say=${encodeURIComponent("buenos días")}`,
+    });
+  }
+
+  // 2. Repaso de la noche, un rato antes de acostarse.
+  if (s.eveningReview) {
+    const at = bedTonight - s.eveningReviewLeadMin * 60_000;
+    if (now >= at - 10 * 60_000 && now < bedTonight) {
+      await add({
+        key: `evening:${today}`,
+        kind: "evening",
+        at: Math.max(at, now),
+        title: "Repaso de la noche 🌙",
+        body: `Para dormir 8 horas, a la cama a las ${hhmm(bedTonight, tz)}. Toca para ver lo de mañana.`,
+        url: `/?say=${encodeURIComponent("buenas noches")}`,
+      });
+    }
+  }
+
+  // 3. Hora de salida para los compromisos de las próximas 3 horas.
+  if (s.leaveReminderMin > 0) {
+    for (const e of todays) {
+      const start = Date.parse(e.start);
+      if (!COMMITMENTS.includes(e.kind) || start <= now || start > now + 3 * 3600_000) continue;
+      const d = await planDeparture({ db, event: e, settings: s, mapsKey: deps.env.GOOGLE_MAPS_API_KEY, fetchImpl: deps.fetchImpl });
+      const leaveAt = Date.parse(localToUtcIso(d.leaveAt, tz));
+      const at = leaveAt - s.leaveReminderMin * 60_000;
+      if (at < now - 5 * 60_000) continue;
+      const how = d.source === "routes_api" ? ` Ruta: ${d.summary}.` : "";
+      const bike = d.bike?.ok ? " Hoy la bici es buena opción." : "";
+      await add({
+        key: `leave:${e.id}:${e.start}`,
+        kind: "leave",
+        at: Math.max(at, now),
+        title: `Sal a las ${d.leaveAt.slice(11)}`,
+        body: `${e.title} a las ${hhmm(start, tz)}.${how}${bike}`,
+        url: "/",
+      });
+    }
+  }
+
+  // 4. Pendientes del día (insistencia gradual) y cumpleaños.
+  for (const p of await listPendingRows(db)) {
+    if (s.pendingNudges) {
+      const n = nextNudge(p, frame, now);
+      if (n && n.at <= now) {
+        const ok = await enqueue(db, {
+          key: `nudge:${p.id}:${today}:${n.index}`,
+          kind: "nudge",
+          at: now,
+          title: n.title,
+          body: n.body,
+          url: "/?tab=pendings",
+        });
+        if (ok) {
+          queued++;
+          await recordNudge(db, p.id, today, n.index + 1, now);
+        }
+      }
+    }
+    for (const b of birthdayNotices(p, frame, s.birthdayNoticeDays)) {
+      if (b.at <= now && now < b.at + 6 * 3600_000) {
+        await add({ key: b.key, kind: "birthday", at: now, title: b.title, body: b.body, url: "/?tab=pendings" });
+      }
+    }
+  }
+  return queued;
+}
+
+export function vapidFromEnv(env: Env): (KeyPairB64 & { subject: string }) | null {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return null;
+  return { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT || "mailto:marlon@example.invalid" };
+}
+
+interface NotificationRow {
+  id: string;
+  dedupe_key: string;
+  kind: string;
+  send_at: string;
+  title: string;
+  body: string;
+  url: string | null;
+  attempts: number;
+}
+
+/** Envía lo vencido a todas las suscripciones. Lo que lleva más de 30 min de retraso se descarta. */
+export async function dispatchNotifications(deps: Omit<SchedulerDeps, "calendar">): Promise<{ sent: number; failed: number }> {
+  const { db, now } = deps;
+  const vapid = vapidFromEnv(deps.env);
+  const nowIso = new Date(now).toISOString();
+  await db
+    .prepare(`UPDATE notifications SET status = 'cancelled', error = 'caducada' WHERE status = 'pending' AND send_at < ?`)
+    .bind(new Date(now - 30 * 60_000).toISOString())
+    .run();
+  const { results: due } = await db
+    .prepare(`SELECT * FROM notifications WHERE status = 'pending' AND send_at <= ? ORDER BY send_at LIMIT 20`)
+    .bind(nowIso)
+    .all<NotificationRow>();
+  if (due.length === 0) return { sent: 0, failed: 0 };
+
+  const { results: subs } = await db
+    .prepare(`SELECT endpoint, p256dh, auth FROM push_subscriptions`)
+    .all<{ endpoint: string; p256dh: string; auth: string }>();
+  let sent = 0;
+  let failed = 0;
+  for (const n of due) {
+    if (!vapid || subs.length === 0) {
+      await db.prepare(`UPDATE notifications SET status = 'failed', error = ? WHERE id = ?`)
+        .bind(vapid ? "sin suscripciones" : "faltan las claves VAPID", n.id)
+        .run();
+      failed++;
+      continue;
+    }
+    const payload = {
+      title: n.title,
+      body: n.body,
+      url: n.url ?? "/",
+      tag: n.dedupe_key.split(":").slice(0, 2).join(":"),
+      // Modo solo texto: sin sonido ni vibración (donde el sistema lo respete).
+      silent: deps.settings.textOnly,
+    };
+    let anyOk = false;
+    let lastError = "";
+    for (const sub of subs) {
+      const r = await sendPush(sub, payload, vapid, {
+        ttl: 30 * 60,
+        urgency: n.kind === "leave" || n.kind === "timer" ? "high" : "normal",
+        fetchImpl: deps.fetchImpl,
+      });
+      if (r.ok) {
+        anyOk = true;
+        await db.prepare(`UPDATE push_subscriptions SET last_success_at = ?, failures = 0 WHERE endpoint = ?`).bind(nowIso, sub.endpoint).run();
+      } else if (r.gone) {
+        await db.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`).bind(sub.endpoint).run();
+        lastError = `suscripción caducada (${r.status})`;
+      } else {
+        await db.prepare(`UPDATE push_subscriptions SET failures = failures + 1 WHERE endpoint = ?`).bind(sub.endpoint).run();
+        lastError = `${r.status} ${r.error}`;
+      }
+    }
+    if (anyOk) {
+      await db.prepare(`UPDATE notifications SET status = 'sent', sent_at = ?, attempts = attempts + 1 WHERE id = ?`).bind(nowIso, n.id).run();
+      sent++;
+    } else {
+      const attempts = n.attempts + 1;
+      await db
+        .prepare(`UPDATE notifications SET status = ?, attempts = ?, error = ? WHERE id = ?`)
+        .bind(attempts >= 3 ? "failed" : "pending", attempts, lastError, n.id)
+        .run();
+      failed++;
+    }
+  }
+  return { sent, failed };
+}

@@ -10,6 +10,9 @@ import { saveSettings } from "./db/settings";
 import type { Env } from "./env";
 import { applyImport, buildPreview, discardUpload, loadUpload } from "./schedule/import";
 import { runCron } from "./cron";
+import { z } from "zod";
+import { closePending, deletePending, listPendings, reopenPending } from "./pendings/store";
+import { dispatchNotifications, enqueue, vapidFromEnv } from "./push/scheduler";
 import { toLocalIso } from "./lib/time";
 import { mondayOfDate, replanGymWeek } from "./planning/apply";
 import { syncUniversity } from "./university/sync";
@@ -44,7 +47,7 @@ api.get("/messages", async (c) => c.json({ messages: await listUiMessages(c.env.
 api.post("/chat", async (c) => {
   const parsed = ChatRequestSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Mensaje no válido." }, 400);
-  if (!parsed.data.text.trim() && parsed.data.images.length === 0) return c.json({ error: "Mensaje vacío." }, 400);
+  if (!parsed.data.text.trim() && parsed.data.images.length === 0 && !parsed.data.audio) return c.json({ error: "Mensaje vacío." }, 400);
   return c.json(await handleChat(c.env, parsed.data));
 });
 
@@ -125,6 +128,93 @@ api.post("/gym/replan", async (c) => {
   const today = toLocalIso(Date.now(), settings.timezone).slice(0, 10);
   const r = await replanGymWeek(calendar, settings, mondayOfDate(today), Date.now());
   return c.json({ ...r, changeIds: calendar.changeIds });
+});
+
+/* ---------------------------- push ---------------------------- */
+
+const SubscriptionSchema = z.object({
+  endpoint: z.string().url().startsWith("https://"),
+  keys: z.object({ p256dh: z.string().min(80).max(100), auth: z.string().min(16).max(32) }),
+});
+
+api.get("/push/key", (c) => {
+  const vapid = vapidFromEnv(c.env);
+  if (!vapid) return c.json({ error: "Faltan las claves VAPID en el servidor." }, 501);
+  return c.json({ publicKey: vapid.publicKey });
+});
+
+api.post("/push/subscribe", async (c) => {
+  const parsed = SubscriptionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Suscripción no válida." }, 400);
+  const { endpoint, keys } = parsed.data;
+  await c.env.DB.prepare(
+    `INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3, user_agent = ?4, failures = 0`,
+  )
+    .bind(endpoint, keys.p256dh, keys.auth, c.req.header("user-agent")?.slice(0, 200) ?? null)
+    .run();
+  return c.json({ ok: true });
+});
+
+api.post("/push/unsubscribe", async (c) => {
+  const body = await c.req.json<{ endpoint?: string }>().catch(() => ({}) as { endpoint?: string });
+  if (body.endpoint) await c.env.DB.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`).bind(body.endpoint).run();
+  return c.json({ ok: true });
+});
+
+api.post("/push/test", async (c) => {
+  const { settings } = await calendarFor(c.env);
+  const now = Date.now();
+  await enqueue(c.env.DB, {
+    key: `test:${now}`,
+    kind: "test",
+    at: now,
+    title: "Marlon",
+    body: settings.textOnly ? "Las notificaciones funcionan (modo solo texto, sin sonido)." : "Las notificaciones funcionan 👌",
+  });
+  return c.json(await dispatchNotifications({ env: c.env, db: c.env.DB, settings, now }));
+});
+
+/* -------------------------- pendientes -------------------------- */
+
+api.get("/pendings", async (c) => c.json({ pendings: await listPendings(c.env.DB, { includeDone: c.req.query("done") === "1" }) }));
+
+api.post("/pendings/:id/close", async (c) => {
+  const { settings } = await calendarFor(c.env);
+  try {
+    return c.json({ pending: await closePending(c.env.DB, c.req.param("id"), Date.now(), settings.timezone) });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 404);
+  }
+});
+
+api.post("/pendings/:id/reopen", async (c) => {
+  await reopenPending(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+api.delete("/pendings/:id", async (c) => {
+  await deletePending(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+/* ------------------------ voz del proveedor ------------------------ */
+
+api.post("/tts", async (c) => {
+  const env = c.env;
+  if (!env.TTS_BASE_URL || !env.TTS_API_KEY || !env.TTS_MODEL) {
+    return c.json({ error: "No hay voz del proveedor configurada." }, 501);
+  }
+  const body = await c.req.json<{ text?: string }>().catch(() => ({}) as { text?: string });
+  const text = (body.text ?? "").slice(0, 2000);
+  if (!text.trim()) return c.json({ error: "Texto vacío." }, 400);
+  const res = await fetch(`${env.TTS_BASE_URL.replace(/\/+$/, "")}/audio/speech`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${env.TTS_API_KEY}` },
+    body: JSON.stringify({ model: env.TTS_MODEL, voice: env.TTS_VOICE || "alloy", input: text, response_format: "mp3" }),
+  });
+  if (!res.ok) return c.json({ error: `La voz del proveedor respondió ${res.status}.` }, 502);
+  return new Response(res.body, { headers: { "content-type": res.headers.get("content-type") ?? "audio/mpeg", "cache-control": "no-store" } });
 });
 
 app.route("/api", api);

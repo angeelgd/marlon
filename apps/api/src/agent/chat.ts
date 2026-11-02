@@ -12,6 +12,8 @@ import { detectLanguage, polish } from "./style";
 import { buildSystemPrompt } from "./system-prompt";
 import { PHASE1_TOOLS } from "./tools";
 import { PHASE2_TOOLS } from "./tools/planning";
+import { PENDING_TOOLS } from "./tools/pendings";
+import { transcribe } from "../llm/transcribe";
 import type { ToolContext } from "./tools/types";
 
 const HISTORY_LIMIT = 30;
@@ -71,14 +73,33 @@ export async function handleChat(env: Env, req: ChatRequest, now = Date.now()): 
     imageIds.push(id);
   }
   const refs = imageIds.map((_, i) => `[imagen ${i}] adjunta`).join("\n");
-  const userText = [req.text.trim(), refs].filter(Boolean).join("\n");
+
+  // Nota de voz: primero se transcribe y luego se trata como texto.
+  let transcript: string | undefined;
+  if (req.audio) {
+    try {
+      transcript = await transcribe(getLlm(env), req.audio.data);
+    } catch (err) {
+      console.error("transcripción falló", err);
+      const msg = err instanceof LlmError ? err.message : "No he podido entender el audio.";
+      const fail: UiMessage = { id: newId("msg"), role: "assistant", text: `No te he podido escuchar bien: ${msg} ¿Me lo escribes?`, createdAt: new Date().toISOString() };
+      return { message: fail, changeIds: [], notice };
+    }
+    if (!transcript) {
+      const empty: UiMessage = { id: newId("msg"), role: "assistant", text: "No he oído nada en la nota de voz. ¿Lo repites?", createdAt: new Date().toISOString() };
+      return { message: empty, changeIds: [], transcript: "", notice };
+    }
+  }
+  const spoken = [req.text.trim(), transcript].filter(Boolean).join("\n");
+  const userText = [spoken, refs].filter(Boolean).join("\n");
 
   const userUi: UiMessage = {
     id: newId("msg"),
     role: "user",
-    text: req.text.trim(),
+    text: spoken,
     createdAt: new Date(now).toISOString(),
     hasImages: imageIds.length > 0 || undefined,
+    fromVoice: req.audio ? true : undefined,
   };
   const userMsg: LlmMessage = { role: "user", content: userText || "(mensaje vacío)" };
 
@@ -100,9 +121,9 @@ export async function handleChat(env: Env, req: ChatRequest, now = Date.now()): 
   try {
     const run = await runAgent({
       llm: getLlm(env),
-      system: buildSystemPrompt(settings, now, detectLanguage(req.text)),
+      system: buildSystemPrompt(settings, now, detectLanguage(spoken)),
       history: [...history, userMsg],
-      tools: [...PHASE1_TOOLS, ...PHASE2_TOOLS],
+      tools: [...PHASE1_TOOLS, ...PHASE2_TOOLS, ...PENDING_TOOLS],
       ctx,
     });
     const polished = polish(run.text);
@@ -126,6 +147,7 @@ export async function handleChat(env: Env, req: ChatRequest, now = Date.now()): 
     text: replyText,
     createdAt: new Date().toISOString(),
     quickReplies: quickReplies.length ? quickReplies : undefined,
+    lang: detectLanguage(replyText) ?? detectLanguage(spoken) ?? "es",
   };
 
   // Se guarda el texto pulido como respuesta final para que el historial sea coherente.
@@ -137,5 +159,5 @@ export async function handleChat(env: Env, req: ChatRequest, now = Date.now()): 
     ...newMessages.map((msg, i) => ({ msg, ui: i === newMessages.length - 1 ? assistantUi : undefined })),
   ]);
 
-  return { message: assistantUi, changeIds: calendar.changeIds, preview: ctx.out.preview, notice };
+  return { message: assistantUi, changeIds: calendar.changeIds, preview: ctx.out.preview, notice, transcript };
 }

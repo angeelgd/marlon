@@ -20,8 +20,8 @@ database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
 [triggers]
-# Cada 15 min: sincronización con Google Calendar. Cada 3 h (minuto 7): calendario de la uni.
-crons = ["*/15 * * * *", "7 */3 * * *"]
+# Cada 5 min: Google Calendar y notificaciones. Cada 3 h (minuto 7): calendario de la uni.
+crons = ["*/5 * * * *", "7 */3 * * *"]
 
 [vars]
 LLM_PROVIDER = "openai-compatible"

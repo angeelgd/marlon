@@ -65,6 +65,20 @@ export const SettingsSchema = z.object({
   /* ---- Fase 2: resúmenes ---- */
   morningBriefing: z.boolean().default(true),
   eveningReview: z.boolean().default(true),
+
+  /* ---- Fase 3: voz, avisos y pendientes ---- */
+  /** Modo solo texto: sin voz ni sonido de ningún tipo (también en las notificaciones). */
+  textOnly: z.boolean().default(false),
+  /** Voz de las respuestas: la del navegador (gratis) o la del proveedor (si está configurada). */
+  voice: z.enum(["browser", "provider"]).default("browser"),
+  /** Avisar de la hora de salida (minutos antes). 0 = no avisar. */
+  leaveReminderMin: z.number().int().min(0).max(60).default(10),
+  /** Minutos antes de acostarse para el repaso de la noche. */
+  eveningReviewLeadMin: z.number().int().min(0).max(180).default(45),
+  /** Días de antelación para avisar de un cumpleaños. */
+  birthdayNoticeDays: z.number().int().min(0).max(60).default(7),
+  /** Insistir con los pendientes del día (de forma gradual). */
+  pendingNudges: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
@@ -150,6 +164,13 @@ export interface ChatImage {
 
 export const ChatRequestSchema = z.object({
   text: z.string().max(8000).default(""),
+  /** Nota de voz en WAV (base64). Unos 90 s como máximo. */
+  audio: z
+    .object({
+      mime: z.literal("audio/wav"),
+      data: z.string().max(4_000_000),
+    })
+    .optional(),
   images: z
     .array(
       z.object({
@@ -169,6 +190,10 @@ export interface UiMessage {
   createdAt: string;
   quickReplies?: string[];
   hasImages?: boolean;
+  /** El mensaje del usuario llegó como nota de voz (text es la transcripción). */
+  fromVoice?: boolean;
+  /** Idioma de la respuesta, para elegir la voz. */
+  lang?: "es" | "en";
 }
 
 export interface ChatResponse {
@@ -177,6 +202,35 @@ export interface ChatResponse {
   changeIds: string[];
   preview?: SchedulePreview;
   notice?: string;
+  /** Transcripción de la nota de voz, si la hubo. */
+  transcript?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pendientes                                                          */
+/* ------------------------------------------------------------------ */
+
+export const PendingKindSchema = z.enum(["reminder", "task", "plan", "birthday"]);
+export type PendingKind = z.infer<typeof PendingKindSchema>;
+
+export interface Pending {
+  id: string;
+  kind: PendingKind;
+  title: string;
+  /** Persona relacionada ("contestar a Mateo"). */
+  person: string | null;
+  notes: string | null;
+  /** Ámbito: trabajo, uni o personal. */
+  area: "work" | "uni" | "personal";
+  /** Fecha local YYYY-MM-DD (en cumpleaños, la del próximo). */
+  dueDate: string | null;
+  /** Hora local HH:MM opcional. */
+  dueTime: string | null;
+  /** Para planes: corto o largo plazo. */
+  horizon: "short" | "long" | null;
+  status: "open" | "done";
+  createdAt: string;
+  doneAt: string | null;
 }
 
 export interface AuthStatus {

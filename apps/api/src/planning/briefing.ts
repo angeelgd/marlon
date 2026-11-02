@@ -4,6 +4,7 @@ import { addDays, localToMs, localToUtcIso, toLocalIso, toLocalParts } from "../
 import { planDeparture, type Departure } from "../integrations/routes";
 import { getForecast, weatherAt } from "../integrations/weather";
 import { findOverlaps } from "./conflicts";
+import { listPendingRows } from "../pendings/store";
 import { planSleep, toCommitments, type Gym } from "./sleep";
 
 /**
@@ -110,6 +111,20 @@ export async function morningBriefing(deps: BriefingDeps) {
       tonight_short_by_min: ctx.tomorrow.shortByMin || undefined,
     },
     conflicts: findOverlaps(ctx.ofDay, tz),
+    pendings: await pendingSummary(deps, date),
+  };
+}
+
+/** Pendientes de hoy, vencidos y cumpleaños cercanos, para los resúmenes. */
+async function pendingSummary(deps: BriefingDeps, date: string) {
+  const rows = await listPendingRows(deps.db);
+  const soon = addDays(date, deps.settings.birthdayNoticeDays);
+  return {
+    today: rows.filter((p) => (p.kind === "reminder" || p.kind === "task") && p.due_date === date).map((p) => p.title),
+    overdue: rows.filter((p) => (p.kind === "reminder" || p.kind === "task") && p.due_date && p.due_date < date).map((p) => p.title),
+    birthdays_soon: rows
+      .filter((p) => p.kind === "birthday" && p.due_date && p.due_date >= date && p.due_date <= soon)
+      .map((p) => ({ who: p.person || p.title, date: p.due_date })),
   };
 }
 
@@ -140,5 +155,6 @@ export async function eveningReview(deps: BriefingDeps) {
       reason: ctx.today.anchor ? `primer compromiso: ${ctx.today.anchor.title}` : "día sin compromisos por la mañana",
     },
     conflicts_tomorrow: findOverlaps(ctx.ofDay, tz),
+    pendings: await pendingSummary(deps, tomorrow),
   };
 }

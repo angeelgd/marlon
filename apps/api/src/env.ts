@@ -24,6 +24,18 @@ export interface Env {
   /** URL iCal de Lukkari. Su parámetro hash= es una contraseña: solo como secreto. */
   UNIVERSITY_ICAL_URL?: string;
 
+  /** Claves VAPID para Web Push (genéralas con `pnpm vapid:generate`). */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  /** Contacto para los servicios de push, p. ej. "mailto:tu@correo". */
+  VAPID_SUBJECT?: string;
+
+  /** Voz del proveedor (opcional), API compatible con OpenAI /audio/speech. */
+  TTS_BASE_URL?: string;
+  TTS_API_KEY?: string;
+  TTS_MODEL?: string;
+  TTS_VOICE?: string;
+
   SESSION_SECRET?: string;
   SETUP_TOKEN?: string;
 
