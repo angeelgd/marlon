@@ -516,3 +516,66 @@ input, textarea { font: inherit; color: inherit; }
 }
 .check:active { background: var(--accent); }
 .small-x { width: 30px; height: 30px; font-size: 13px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- */
+/* Fase 4: Más (dinero, comida, historial)                          */
+/* ---------------------------------------------------------------- */
+.more { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.segmented { display: flex; gap: 2px; margin: 10px 12px 0; background: var(--surface); border-radius: 10px; padding: 3px; }
+.segmented button { flex: 1; background: transparent; border: 0; border-radius: 8px; padding: 7px; font-size: 14px; color: var(--muted); }
+.segmented button[aria-selected="true"] { background: var(--surface-2); color: var(--text); }
+.more-body { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+.money, .food { padding: 10px 12px 24px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--surface); border-radius: 14px; padding: 12px 14px; }
+.card h3 { margin: 0 0 8px; font-size: 15px; }
+.card h4 { margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
+.month-nav { display: flex; align-items: center; justify-content: space-between; }
+.month-nav h2 { font-size: 17px; margin: 0; }
+.month-nav h2::first-letter { text-transform: uppercase; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.kpis div { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: 10px; padding: 8px; }
+.kpis b { font-size: 16px; }
+.kpis b.neg { color: var(--danger); }
+.warn { margin-top: 10px; border: 1px solid var(--work); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+.warn p { margin: 0 0 6px; }
+.confirm-list { padding-left: 0; list-style: none; margin: 8px 0; }
+.shift-list, .expense-list, .cat-list, .menu-list, .recipe-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.shift-list li { border-radius: 10px; background: var(--surface-2); }
+.shift-list li.differs { outline: 1px solid var(--work); }
+.shift-main { width: 100%; display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; background: none; border: 0; padding: 8px 10px; text-align: left; font-size: 14px; }
+.shift-main span:first-child::first-letter { text-transform: uppercase; }
+.shift-edit { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
+.shift-edit input, .inline-form input, .inline-form select, .card select, .rules-grid input {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 9px;
+  font-size: 16px;
+  color: var(--text);
+  min-width: 0;
+}
+.inline-form { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.inline-form input { flex: 1 1 110px; }
+.expense-list li, .cat-list li { display: flex; align-items: center; gap: 8px; justify-content: space-between; font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.expense-list li div { flex: 1; min-width: 0; }
+.bars { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.bar-row { display: grid; grid-template-columns: 1fr; gap: 3px; }
+.bar { position: relative; height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.bar div { height: 100%; background: var(--accent); border-radius: 999px; }
+.bar div.over { background: var(--danger); }
+.bar i { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: 0.5; }
+.tip { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 8px; padding: 6px 8px; margin: 6px 0; }
+.rules-grid { margin: 8px 0; }
+.card .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.card label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
+.card label.row { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
+.menu-list li { display: flex; flex-direction: column; gap: 1px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.menu-list b::first-letter { text-transform: uppercase; }
+.shop-group ul { list-style: none; margin: 0; padding: 0; }
+.shop-group label { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 15px; color: var(--text); flex-direction: row; }
+.shop-group label.done span:first-of-type { text-decoration: line-through; color: var(--muted); }
+.shop-group input[type="checkbox"] { width: 20px; height: 20px; }
+.notes { padding-left: 18px; color: var(--muted); }
+.recipe-list a { color: var(--accent); }
+.recipe-list li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.recipe-list p { margin: 4px 0 0; }

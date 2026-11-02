@@ -14,6 +14,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat } from "./components/Chat";
 import { History } from "./components/History";
 import { Pendings } from "./components/Pendings";
+import { Food } from "./components/Food";
+import { Money } from "./components/Money";
+import { More, type MoreSection } from "./components/More";
 import { Login } from "./components/Login";
 import { Settings } from "./components/Settings";
 import { WeekCalendar } from "./components/WeekCalendar";
@@ -22,8 +25,8 @@ import { disablePush, enablePush, pushState, type PushState } from "./lib/push";
 import { speak, stopSpeaking } from "./lib/speech";
 import { mondayOf, weekRange } from "./lib/week";
 
-type Tab = "chat" | "week" | "pendings" | "history";
-const TABS: Tab[] = ["chat", "week", "pendings", "history"];
+type Tab = "chat" | "week" | "pendings" | "more";
+const TABS: Tab[] = ["chat", "week", "pendings", "more"];
 
 function useIsWide() {
   const q = "(min-width: 900px)";
@@ -62,6 +65,7 @@ function clearUrlParams() {
 function Main({ onLogout }: { onLogout(): void }) {
   const wide = useIsWide();
   const [tab, setTab] = useState<Tab>("chat");
+  const [moreSection, setMoreSection] = useState<MoreSection>("money");
   const [settings, setSettings] = useState<S>(DEFAULT_SETTINGS);
   const [backend, setBackend] = useState<"google" | "local">("local");
   const [showSettings, setShowSettings] = useState(false);
@@ -175,9 +179,9 @@ function Main({ onLogout }: { onLogout(): void }) {
 
   useEffect(() => {
     if (weekVisible) setUnseenChanges(0);
-    if (tab === "history") void loadHistory();
+    if (tab === "more" && moreSection === "history") void loadHistory();
     if (tab === "pendings") void loadPendings();
-  }, [weekVisible, tab, loadHistory, loadPendings]);
+  }, [weekVisible, tab, moreSection, loadHistory, loadPendings]);
 
   const textOnly = settings.textOnly;
 
@@ -329,6 +333,32 @@ function Main({ onLogout }: { onLogout(): void }) {
   const today = toLocalIso(Date.now(), tz).slice(0, 10);
   const todayCount = pendings.filter((p) => (p.kind === "reminder" || p.kind === "task") && p.dueDate !== null && p.dueDate <= today).length;
   const chat = <Chat messages={messages} sending={sending} textOnly={textOnly} onSend={send} onVoice={sendVoice} />;
+  const saveSettingsPatch = async (patch: Partial<S>) => {
+    const r = await api.saveSettings(patch);
+    setSettings(r.settings);
+  };
+  const more = (
+    <More
+      section={moreSection}
+      onSection={(sec) => {
+        setMoreSection(sec);
+        if (sec === "history") void loadHistory();
+      }}
+      money={tab === "more" && moreSection === "money" ? <Money today={today} onSaveSettings={saveSettingsPatch} onToast={showToast} /> : null}
+      food={
+        tab === "more" && moreSection === "food" ? (
+          <Food
+            onToast={showToast}
+            onAsk={(t) => {
+              setTab("chat");
+              void send(t, []);
+            }}
+          />
+        ) : null
+      }
+      history={<History entries={history} busy={undoing} onUndo={undo} />}
+    />
+  );
   const pendingList = (
     <Pendings pendings={pendings} today={today} busy={closing} onClose={closePendingItem} onDelete={deletePendingItem} />
   );
@@ -346,7 +376,7 @@ function Main({ onLogout }: { onLogout(): void }) {
             <button role="tab" aria-selected={tab === "pendings"} onClick={() => setTab("pendings")}>
               Pendientes{todayCount > 0 && <span className="pill">{todayCount}</span>}
             </button>
-            <button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>Historial</button>
+            <button role="tab" aria-selected={tab === "more"} onClick={() => setTab("more")}>Más</button>
           </nav>
         )}
         <div className="topbar-actions">
@@ -364,8 +394,8 @@ function Main({ onLogout }: { onLogout(): void }) {
               <button className="icon-btn" onClick={() => setTab(tab === "pendings" ? "chat" : "pendings")} aria-label="Pendientes">
                 ☑
               </button>
-              <button className="icon-btn" onClick={() => setTab(tab === "history" ? "chat" : "history")} aria-label="Historial">
-                ↺
+              <button className="icon-btn" onClick={() => setTab(tab === "more" ? "chat" : "more")} aria-label="Dinero, comida e historial">
+                ☰
               </button>
             </>
           )}
@@ -381,11 +411,7 @@ function Main({ onLogout }: { onLogout(): void }) {
               {chat}
             </div>
             <div className="pane pane-week">{calendar}</div>
-            {tab === "history" && (
-              <aside className="pane pane-history">
-                <History entries={history} busy={undoing} onUndo={undo} />
-              </aside>
-            )}
+            {tab === "more" && <aside className="pane pane-history">{more}</aside>}
             {tab === "pendings" && <aside className="pane pane-history">{pendingList}</aside>}
           </>
         ) : (
@@ -397,8 +423,8 @@ function Main({ onLogout }: { onLogout(): void }) {
             <div className="pane" hidden={tab !== "pendings"}>
               {pendingList}
             </div>
-            <div className="pane" hidden={tab !== "history"}>
-              <History entries={history} busy={undoing} onUndo={undo} />
+            <div className="pane" hidden={tab !== "more"}>
+              {more}
             </div>
           </>
         )}
@@ -417,10 +443,7 @@ function Main({ onLogout }: { onLogout(): void }) {
           calendarBackend={backend}
           onClose={() => setShowSettings(false)}
           onLogout={onLogout}
-          onSave={async (patch) => {
-            const r = await api.saveSettings(patch);
-            setSettings(r.settings);
-          }}
+          onSave={saveSettingsPatch}
           onSyncUniversity={async () => {
             const r = await api.syncUniversity();
             await Promise.all([loadEvents({ markChanges: true }), loadHistory()]);

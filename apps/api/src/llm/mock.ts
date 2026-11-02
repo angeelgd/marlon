@@ -85,6 +85,7 @@ export class MockProvider implements LlmProvider {
         return { content: `Este mes llevas ${d.actual} brutos; con el horario completo serían ${d.if_full_schedule}. ${d.disclaimer}`, toolCalls: [] };
       }
       if (d.start && d.end && d.planned !== undefined) return { content: `Anotado: el ${d.date} trabajaste de ${d.start} a ${d.end}.`, toolCalls: [] };
+      if (d.week_start && d.menu) return { content: `Menú listo para la semana del ${d.week_start}. La lista de la compra está en Más > Comida.`, toolCalls: [] };
       if (d.saved?.kind) return { content: `Apuntado: ${d.saved.title}. Te lo iré recordando.`, toolCalls: [] };
       if (d.closed) return { content: `¡Hecho! Quito "${d.closed.title}" de la lista.`, toolCalls: [] };
       if (Array.isArray(d.sessions)) {
@@ -115,6 +116,7 @@ export class MockProvider implements LlmProvider {
       return call("log_expense", { amount: spent[1], category, merchant: what });
     }
     if (/cu[aá]nto\s+(he\s+)?ganad|sueldo|n[oó]mina/.test(text)) return call("calc_monthly_pay", {});
+    if (/men[uú]/.test(text)) return call("build_menu_and_shopping_list", {});
     const out = /sal[ií]\s+a\s+las\s+(\d{1,2})[:.](\d{2})/.exec(text);
     if (out) return call("log_actual_shift", { end: `${out[1]!.padStart(2, "0")}:${out[2]}` });
     const remind = /recu[eé]rdame\s+(.+)/i.exec(lastUserText(req.messages));
