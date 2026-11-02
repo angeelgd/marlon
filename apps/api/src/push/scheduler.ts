@@ -2,7 +2,8 @@ import type { CalendarEvent, Settings } from "@marlon/shared";
 import type { CalendarService } from "../calendar/service";
 import type { Env } from "../env";
 import { newId } from "../lib/ids";
-import { addDays, localToUtcIso, toLocalIso, toLocalParts } from "../lib/time";
+import { addDays, localToMs, localToUtcIso, toLocalIso, toLocalParts, weekdayOf } from "../lib/time";
+import { expiringRuleSet, listRuleSets } from "../money/payroll";
 import { planDeparture } from "../integrations/routes";
 import { getForecast, weatherAt } from "../integrations/weather";
 import { birthdayNotices, nextNudge, type DayFrame } from "../pendings/nudges";
@@ -142,7 +143,36 @@ export async function planNotifications(deps: SchedulerDeps): Promise<number> {
     }
   }
 
-  // 4. Pendientes del día (insistencia gradual) y cumpleaños.
+  // 4. Tabla de sueldos a punto de caducar (un mes antes) sin otra que la siga.
+  const expiring = expiringRuleSet(await listRuleSets(db), today);
+  if (expiring && now >= frame.wake + 60 * 60_000) {
+    await add({
+      key: `payrules:${expiring.id}`,
+      kind: "payrules",
+      at: now,
+      title: "Toca actualizar el sueldo",
+      body: `La tabla de sueldos vale hasta el ${expiring.validTo!.split("-").reverse().join("/")}. Cuando tengas la nueva, añádela en Más > Dinero.`,
+      url: "/?tab=more",
+    });
+  }
+
+  // 5. Ideas de batch cooking, el día antes del día de cocinar (sin gastar cuota hasta que las pida).
+  if (deps.env.YOUTUBE_API_KEY && s.cookingVideosPerWeek > 0) {
+    const dayBefore = (s.cookingWeekday + 6) % 7;
+    const at = localToMs(`${today}T10:00`, tz);
+    if (weekdayOf(today) === dayBefore && now >= at && now < at + 10 * 3600_000) {
+      await add({
+        key: `cooking:${today}`,
+        kind: "cooking",
+        at: now,
+        title: "Ideas de batch cooking 🥦",
+        body: `Te busco ${s.cookingVideosPerWeek === 1 ? "un vídeo" : "dos vídeos"} de batch cooking vegano para mañana. Toca y te los enseño.`,
+        url: `/?say=${encodeURIComponent("Propónme vídeos de batch cooking para esta semana")}`,
+      });
+    }
+  }
+
+  // 6. Pendientes del día (insistencia gradual) y cumpleaños.
   for (const p of await listPendingRows(db)) {
     if (s.pendingNudges) {
       const n = nextNudge(p, frame, now);

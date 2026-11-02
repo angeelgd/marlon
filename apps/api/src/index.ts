@@ -12,6 +12,11 @@ import { applyImport, buildPreview, discardUpload, loadUpload } from "./schedule
 import { runCron } from "./cron";
 import { z } from "zod";
 import { closePending, deletePending, listPendings, reopenPending } from "./pendings/store";
+import { ExpenseCategorySchema, PayRulesSchema } from "@marlon/shared";
+import { addExpense, deleteBudgetItem, deleteExpense, expenseSummary, listBudgetItems, listExpenses, setBudgetItem } from "./money/expenses";
+import { clearActualShift, currentMonth, deleteRuleSet, listRuleSets, logActualShift, monthPay, saveRuleSet } from "./money/payroll";
+import { getMealPlan, toggleShoppingItem } from "./food/menu";
+import { getRecipes } from "./food/recipes";
 import { dispatchNotifications, enqueue, vapidFromEnv } from "./push/scheduler";
 import { toLocalIso } from "./lib/time";
 import { mondayOfDate, replanGymWeek } from "./planning/apply";
@@ -196,6 +201,115 @@ api.post("/pendings/:id/reopen", async (c) => {
 api.delete("/pendings/:id", async (c) => {
   await deletePending(c.env.DB, c.req.param("id"));
   return c.json({ ok: true });
+});
+
+/* ----------------------------- dinero ----------------------------- */
+// Estas rutas no envían nada al modelo: son para ver y editar los datos en la app.
+
+const MonthQuery = z.string().regex(/^\d{4}-\d{2}$/);
+
+api.get("/money", async (c) => {
+  const { settings } = await calendarFor(c.env);
+  const month = MonthQuery.safeParse(c.req.query("month")).data ?? currentMonth(Date.now(), settings.timezone);
+  const today = toLocalIso(Date.now(), settings.timezone).slice(0, 10);
+  const pay = await monthPay(c.env.DB, month, settings);
+  const summary = await expenseSummary(c.env.DB, month, settings, { today, payEstimateCents: pay.actualCents || null });
+  // Comparación de texto: "YYYY-MM-31" cubre todos los días del mes.
+  const expenses = await listExpenses(c.env.DB, `${month}-01`, `${month}-31`);
+  return c.json({
+    month,
+    pay,
+    summary,
+    expenses,
+    budget: await listBudgetItems(c.env.DB),
+    ruleSets: await listRuleSets(c.env.DB),
+    options: { eveMode: settings.payEveMode, midnightRule: settings.payMidnightRule },
+  });
+});
+
+const ExpenseBody = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  amountCents: z.number().int().positive().max(1_000_000),
+  category: ExpenseCategorySchema,
+  merchant: z.string().max(100).nullable().optional(),
+  note: z.string().max(300).nullable().optional(),
+});
+
+api.post("/expenses", async (c) => {
+  const parsed = ExpenseBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Gasto no válido." }, 400);
+  return c.json({ expense: await addExpense(c.env.DB, { ...parsed.data, source: "text" }) });
+});
+
+api.delete("/expenses/:id", async (c) => {
+  return (await deleteExpense(c.env.DB, c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "No existe." }, 404);
+});
+
+api.put("/budget", async (c) => {
+  const parsed = z
+    .object({ kind: z.enum(["income", "fixed"]), name: z.string().min(1).max(60), amountCents: z.number().int().positive(), bucket: z.enum(["needs", "wants", "savings"]).nullable().optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Dato no válido." }, 400);
+  return c.json({ item: await setBudgetItem(c.env.DB, { ...parsed.data, bucket: parsed.data.bucket ?? undefined }) });
+});
+
+api.delete("/budget/:id", async (c) => {
+  await deleteBudgetItem(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+api.put("/actual-shifts/:date", async (c) => {
+  const date = c.req.param("date");
+  const parsed = z
+    .object({ start: z.string().regex(/^\d{2}:\d{2}$/).optional(), end: z.string().regex(/^\d{2}:\d{2}$/).optional(), dayOff: z.boolean().optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: "Datos no válidos." }, 400);
+  try {
+    return c.json(await logActualShift(c.env.DB, { date, ...parsed.data }));
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+api.delete("/actual-shifts/:date", async (c) => {
+  await clearActualShift(c.env.DB, c.req.param("date"));
+  return c.json({ ok: true });
+});
+
+api.put("/pay-rules", async (c) => {
+  const parsed = z
+    .object({
+      id: z.string().optional(),
+      validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      rules: PayRulesSchema,
+      note: z.string().max(300).nullable(),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Tabla no válida." }, 400);
+  try {
+    return c.json({ ruleSet: await saveRuleSet(c.env.DB, parsed.data) });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+api.delete("/pay-rules/:id", async (c) => {
+  const sets = await listRuleSets(c.env.DB);
+  if (sets.length <= 1) return c.json({ error: "Tiene que quedar al menos una tabla." }, 400);
+  await deleteRuleSet(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+/* ----------------------------- comida ----------------------------- */
+
+api.get("/food", async (c) => c.json({ plan: await getMealPlan(c.env.DB, c.req.query("week") || undefined), recipes: await getRecipes(c.env.DB) }));
+
+api.post("/food/shopping/toggle", async (c) => {
+  const body = await c.req.json<{ week?: string; name?: string; checked?: boolean }>().catch(() => ({}) as { week?: string; name?: string; checked?: boolean });
+  if (!body.week || !body.name) return c.json({ error: "Faltan datos." }, 400);
+  const ok = await toggleShoppingItem(c.env.DB, body.week, body.name, Boolean(body.checked));
+  return ok ? c.json({ ok: true }) : c.json({ error: "No existe." }, 404);
 });
 
 /* ------------------------ voz del proveedor ------------------------ */

@@ -79,6 +79,33 @@ export const SettingsSchema = z.object({
   birthdayNoticeDays: z.number().int().min(0).max(60).default(7),
   /** Insistir con los pendientes del día (de forma gradual). */
   pendingNudges: z.boolean().default(true),
+
+  /* ---- Fase 4: dinero ---- */
+  /** Víspera de festivo: "probable" (el 50 % sube también la base) o "minimum" (solo el suplemento). */
+  payEveMode: z.enum(["probable", "minimum"]).default("probable"),
+  /**
+   * Turno que cruza la medianoche hacia un domingo o festivo. "ask" = no se supone nada:
+   * esas horas quedan sin calcular hasta que se elija regla.
+   */
+  payMidnightRule: z.enum(["ask", "calendar_day", "shift_start"]).default("ask"),
+  /** Permitir datos económicos por la capa gratuita sin preguntar cada vez. */
+  financialFreeTierAlways: z.boolean().default(false),
+  /** Coste de un café hecho en casa (céntimos), para las comparaciones. */
+  homeCoffeeCents: z.number().int().min(0).max(1000).default(35),
+  /** Precio de un termo, que se amortiza en las comparaciones (céntimos). */
+  thermosCents: z.number().int().min(0).max(20000).default(2500),
+
+  /* ---- Fase 4: comida ---- */
+  /** Presupuesto semanal de comida (céntimos). 0 = sin presupuesto. */
+  foodWeeklyBudgetCents: z.number().int().min(0).max(100000).default(4000),
+  /** Peso aproximado para el objetivo de proteína (kg). 0 = no calcular. */
+  bodyWeightKg: z.number().min(0).max(300).default(0),
+  /** Gramos de proteína por kg al día para ganar músculo. */
+  proteinPerKg: z.number().min(0.8).max(2.5).default(1.6),
+  /** Día preferido para cocinar (0 = domingo). */
+  cookingWeekday: z.number().int().min(0).max(6).default(0),
+  /** Ideas de batch cooking a la semana (1 o 2). */
+  cookingVideosPerWeek: z.number().int().min(0).max(2).default(2),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
@@ -238,3 +265,96 @@ export interface AuthStatus {
   hasCredentials: boolean;
 }
 export * from "./time";
+
+/* ------------------------------------------------------------------ */
+/* Dinero                                                              */
+/* ------------------------------------------------------------------ */
+
+/** Reglas de pago (importes brutos en céntimos). Editables con fecha de vigencia. */
+export const PayRulesSchema = z.object({
+  baseCents: z.number().int().min(0),
+  /** Suplemento de tarde y desde qué hora. */
+  eveningSupplementCents: z.number().int().min(0),
+  eveningFrom: z.string().regex(/^\d{2}:\d{2}$/),
+  /** Suplemento de noche (de 00:00 a nightTo). */
+  nightSupplementCents: z.number().int().min(0),
+  nightTo: z.string().regex(/^\d{2}:\d{2}$/),
+  /** Domingos y festivos: multiplicador sobre base y suplementos (2 = +100 %). */
+  sundayHolidayMultiplier: z.number().min(1).max(4),
+  /** ¿Confirmado que el suplemento de noche también se dobla en domingo? */
+  sundayNightConfirmed: z.boolean(),
+  /** Víspera de festivo: desde qué hora y cuánto (1.5 = +50 %). */
+  eveFrom: z.string().regex(/^\d{2}:\d{2}$/),
+  eveMultiplier: z.number().min(1).max(4),
+});
+export type PayRules = z.infer<typeof PayRulesSchema>;
+
+export interface PayRuleSet {
+  id: string;
+  validFrom: string; // YYYY-MM-DD
+  validTo: string | null;
+  rules: PayRules;
+  note: string | null;
+}
+
+export const ExpenseCategorySchema = z.enum([
+  "groceries",
+  "eating_out",
+  "coffee",
+  "transport",
+  "housing",
+  "utilities",
+  "health",
+  "education",
+  "leisure",
+  "shopping",
+  "subscriptions",
+  "other",
+]);
+export type ExpenseCategory = z.infer<typeof ExpenseCategorySchema>;
+
+export const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
+  groceries: "Súper",
+  eating_out: "Comer fuera",
+  coffee: "Cafés",
+  transport: "Transporte",
+  housing: "Vivienda",
+  utilities: "Suministros",
+  health: "Salud",
+  education: "Estudios",
+  leisure: "Ocio",
+  shopping: "Compras",
+  subscriptions: "Suscripciones",
+  other: "Otros",
+};
+
+export interface Expense {
+  id: string;
+  date: string;
+  amountCents: number;
+  merchant: string | null;
+  category: ExpenseCategory;
+  note: string | null;
+  source: "text" | "voice" | "receipt";
+  createdAt: string;
+}
+
+export interface BudgetItem {
+  id: string;
+  kind: "income" | "fixed";
+  name: string;
+  amountCents: number;
+  /** Necesidad (vivienda, suministros…) o deseo, para la regla 50/30/20. */
+  bucket: "needs" | "wants" | "savings" | null;
+}
+
+/** Formato "1 234,56 €". */
+export function formatEuros(cents: number, decimals = 2): string {
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+    useGrouping: true,
+  }).format(cents / 100);
+}

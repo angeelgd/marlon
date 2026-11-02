@@ -21,6 +21,15 @@ export interface Env {
 
   /** Clave de Google Maps Platform (Routes API). Opcional: sin ella se estima el trayecto. */
   GOOGLE_MAPS_API_KEY?: string;
+  /** YouTube Data API v3 (búsqueda de vídeos de batch cooking). */
+  YOUTUBE_API_KEY?: string;
+  /**
+   * Clave de Gemini para la API nativa (entender vídeos de YouTube). Si no se pone y
+   * LLM_BASE_URL es de Gemini, se usa LLM_API_KEY.
+   */
+  GEMINI_API_KEY?: string;
+  LLM_VIDEO_MODEL?: string;
+
   /** URL iCal de Lukkari. Su parámetro hash= es una contraseña: solo como secreto. */
   UNIVERSITY_ICAL_URL?: string;
 

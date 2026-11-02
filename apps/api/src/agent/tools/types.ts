@@ -17,11 +17,20 @@ export interface ToolContext {
   llm: (opts?: RouteOptions) => LlmProvider;
   /** fetch para APIs externas (se sustituye en los tests). */
   fetchImpl?: typeof fetch;
+  /**
+   * Se pueden tratar datos económicos en este turno: hay clave de pago o el usuario
+   * aceptó la capa gratuita. Si no, las herramientas de dinero se niegan.
+   */
+  financialAllowed?: boolean;
   /** Salidas hacia la interfaz que pueden rellenar las herramientas. */
   out: {
     quickReplies: string[];
     preview?: SchedulePreview;
     notice?: string;
+    /** Una herramienta de dinero se negó por falta de permiso. */
+    needsFinancialConsent?: boolean;
+    /** El turno ha tratado datos económicos (los mensajes se marcan como sensibles). */
+    financialUsed?: boolean;
   };
 }
 
@@ -96,4 +105,17 @@ export async function executeTool(tools: Tool[], name: string, rawArgs: string, 
     const e = err as Error & { hint?: string };
     return { ok: false, error: e.message || String(err), hint: e.hint };
   }
+}
+
+/** Las herramientas de dinero llaman a esto antes de hacer nada. */
+export function requireFinancial(ctx: ToolContext): void {
+  if (ctx.financialAllowed) {
+    ctx.out.financialUsed = true;
+    return;
+  }
+  ctx.out.needsFinancialConsent = true;
+  throw new ToolError(
+    "needs_financial_consent",
+    "Hace falta permiso para tratar datos económicos por la capa gratuita. Di en una frase que lo necesitas; Marlon preguntará.",
+  );
 }

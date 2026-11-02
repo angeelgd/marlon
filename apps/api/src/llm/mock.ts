@@ -80,6 +80,11 @@ export class MockProvider implements LlmProvider {
           toolCalls: [],
         };
       }
+      if (d.saved?.amount && d.saved?.category) return { content: `Apuntado: ${d.saved.amount} en ${d.saved.category.toLowerCase()}.`, toolCalls: [] };
+      if (d.actual && d.if_full_schedule) {
+        return { content: `Este mes llevas ${d.actual} brutos; con el horario completo serían ${d.if_full_schedule}. ${d.disclaimer}`, toolCalls: [] };
+      }
+      if (d.start && d.end && d.planned !== undefined) return { content: `Anotado: el ${d.date} trabajaste de ${d.start} a ${d.end}.`, toolCalls: [] };
       if (d.saved?.kind) return { content: `Apuntado: ${d.saved.title}. Te lo iré recordando.`, toolCalls: [] };
       if (d.closed) return { content: `¡Hecho! Quito "${d.closed.title}" de la lista.`, toolCalls: [] };
       if (Array.isArray(d.sessions)) {
@@ -103,6 +108,15 @@ export class MockProvider implements LlmProvider {
     }
     if (text.includes("buenas noches") || text.includes("good night")) return call("get_evening_review", {});
     if (text.includes("gimnasio") || text.includes("gym")) return call("plan_gym_week", {});
+    const spent = /gast\S*\s+(\d+(?:[.,]\d{1,2})?)\s*(?:€|euros?)?\s+en\s+(?:un |una )?(.+)/.exec(text);
+    if (spent) {
+      const what = spent[2]!.replace(/[.!?]+$/, "");
+      const category = /caf[eé]/.test(what) ? "coffee" : /s[uú]per|compra/.test(what) ? "groceries" : "other";
+      return call("log_expense", { amount: spent[1], category, merchant: what });
+    }
+    if (/cu[aá]nto\s+(he\s+)?ganad|sueldo|n[oó]mina/.test(text)) return call("calc_monthly_pay", {});
+    const out = /sal[ií]\s+a\s+las\s+(\d{1,2})[:.](\d{2})/.exec(text);
+    if (out) return call("log_actual_shift", { end: `${out[1]!.padStart(2, "0")}:${out[2]}` });
     const remind = /recu[eé]rdame\s+(.+)/i.exec(lastUserText(req.messages));
     if (remind) {
       const title = remind[1]!.replace(/[.!?]+$/, "");
