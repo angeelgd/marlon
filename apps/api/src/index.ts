@@ -9,8 +9,8 @@ import { authRoutes } from "./auth/webauthn";
 import { saveSettings } from "./db/settings";
 import type { Env } from "./env";
 import { applyImport, buildPreview, discardUpload, loadUpload } from "./schedule/import";
-import { purgeExpiredCache } from "./integrations/cache";
-import { addDays, toLocalIso } from "./lib/time";
+import { runCron } from "./cron";
+import { toLocalIso } from "./lib/time";
 import { mondayOfDate, replanGymWeek } from "./planning/apply";
 import { syncUniversity } from "./university/sync";
 
@@ -129,34 +129,6 @@ api.post("/gym/replan", async (c) => {
 
 app.route("/api", api);
 app.all("/api/*", (c) => c.json({ error: "No encontrado." }, 404));
-
-export const UNIVERSITY_CRON = "7 */3 * * *";
-
-/** Tareas programadas. Se exporta para poder probarla. */
-export async function runCron(cron: string, env: Env, now = Date.now()): Promise<void> {
-  const { calendar, settings } = await calendarFor(env);
-  if (cron === UNIVERSITY_CRON) {
-    // Calendario de la uni cada pocas horas. Si cambia algo, se reajusta el gimnasio.
-    const r = await syncUniversity(env, calendar, settings, { now });
-    if (!r.skipped && r.created + r.changed + r.removed > 0) {
-      const today = toLocalIso(now, settings.timezone).slice(0, 10);
-      for (const monday of [mondayOfDate(today), addDays(mondayOfDate(today), 7)]) {
-        await replanGymWeek(calendar, settings, monday, now);
-      }
-    }
-    return;
-  }
-  // Cada 15 minutos: limpieza y sincronización con Google Calendar.
-  const dayAgo = new Date(now - 86_400_000).toISOString();
-  const nowIso = new Date(now).toISOString();
-  await env.DB.batch([
-    env.DB.prepare(`DELETE FROM pending_images WHERE created_at < ?`).bind(dayAgo),
-    env.DB.prepare(`DELETE FROM sessions WHERE expires_at < ?`).bind(nowIso),
-    env.DB.prepare(`DELETE FROM auth_challenges WHERE expires_at < ?`).bind(nowIso),
-  ]);
-  await purgeExpiredCache(env.DB);
-  await syncCalendar(env.DB, calendar);
-}
 
 export default {
   fetch: app.fetch,

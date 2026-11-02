@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PHASE2_TOOLS } from "../src/agent/tools/planning";
 import { executeTool } from "../src/agent/tools/types";
 import { handleChat } from "../src/agent/chat";
-import { runCron, UNIVERSITY_CRON } from "../src/index";
+import { runCron, UNIVERSITY_CRON } from "../src/cron";
 import { replanGymWeek } from "../src/planning/apply";
 import { localToUtcIso } from "../src/lib/time";
 import { fakeFetch, json, openMeteo } from "./fakes";
