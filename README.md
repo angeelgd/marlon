@@ -2,7 +2,9 @@
 
 Agente personal de organización para una sola persona. Es una PWA que se instala en el iPhone y habla con un agente de IA que organiza la semana sobre Google Calendar.
 
-> **Estado: fase 1 (núcleo).** Incluye la PWA, el chat, la capa de IA intercambiable, Google Calendar, el calendario semanal animado con historial y deshacer, y la lectura de la foto del horario de trabajo.
+> **Estado: fases 1 y 2.**
+> - Fase 1 (núcleo): PWA, chat, capa de IA intercambiable, Google Calendar, calendario semanal animado con historial y deshacer, y foto del horario de trabajo.
+> - Fase 2 (planificación): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
 
 ## Índice
 
@@ -30,6 +32,32 @@ Agente personal de organización para una sola persona. Es una PWA que se instal
 - **Modo local**: si no hay credenciales de Google, el calendario vive solo en D1. Sirve para probar la app sin configurar nada.
 - **Acceso con passkey** (Face ID / Touch ID) y sesión en una cookie `HttpOnly`, `Secure`, `SameSite=Strict`.
 
+### Fase 2: planificación
+
+- **Calendario de la uni.** La URL iCal de Lukkari se guarda como secreto y un cron la sincroniza cada 3 horas, o desde Ajustes con "Sincronizar la uni ahora".
+  - Cada clase se identifica por su UID, y en las series también por el inicio original. Así no se duplica: si cambia de hora se mueve, si se cancela o desaparece del iCal se quita.
+  - Marlon detecta los turnos de trabajo que se solapan con clases y dice cuáles son.
+  - El parser (`apps/api/src/university/ical.ts`) admite zonas `TZID`, días completos, `RRULE` semanales y diarias (`INTERVAL`, `COUNT`, `UNTIL`, `BYDAY`), `EXDATE` y `RECURRENCE-ID`.
+- **Gimnasio** (`apps/api/src/planning/gym.ts`).
+  - Planifica entre 3 y 4 sesiones por semana, por la mañana si cabe y si no por la tarde o la noche, evitando días seguidos.
+  - Cada sesión es un bloque de 1h20 a 2h20 que incluye 10 minutos de trayecto en cada sentido.
+  - Si el hueco es justo, pregunta cuánto vas a estar, con botones.
+  - Cuando llega un horario nuevo (foto o cambios en la uni), reajusta las sesiones solo y lo cuenta después. Los turnos y el gimnasio se deshacen juntos.
+  - Solo toca sesiones futuras que creó él.
+- **Sueño** (`apps/api/src/planning/sleep.ts`). Las 8 horas son intocables (los ajustes no aceptan menos).
+  - La hora de levantarse se calcula hacia atrás desde el primer compromiso: trayecto y rutina de mañana, o la preparación si el día empieza en el gimnasio.
+  - La de acostarse, 8 horas antes.
+  - Si lo que acaba tarde la noche anterior no lo permite, lo avisa con los minutos que faltan y propone alternativas. Nunca recorta el sueño.
+- **Rutas** (`apps/api/src/integrations/routes.ts`).
+  - Calcula en transporte público con la Routes API la hora de salir de casa para llegar con el margen configurado. Es la salida del primer bus menos lo que se camina hasta la parada.
+  - La bici solo se propone en los meses configurados (abril a octubre por defecto), con buen tiempo (sin lluvia, más de 5 °C, poco viento) y si el trayecto es corto.
+  - Sin clave de Maps, o si la API falla, estima con el trayecto de los ajustes y lo dice.
+  - Las rutas se guardan en caché para ahorrar cuota: las de transporte público 12 horas y las de bici una semana.
+- **Buenos días y repaso de la noche** (`apps/api/src/planning/briefing.ts`).
+  - Con "buenos días", Marlon saluda y resume el tiempo (Open-Meteo, sin clave), la hora, cómo de cargado está el día y a qué hora salir. Cierra con una frase motivadora y te pregunta si tienes dudas.
+  - Con "buenas noches", repasa el día siguiente y a qué hora acostarte y levantarte.
+  - Los dos se pueden desactivar en Ajustes. Los avisos automáticos por push llegan en la fase 3.
+
 ## Arquitectura
 
 ```
@@ -51,6 +79,8 @@ scripts/
 | **El modelo transcribe y el código interpreta** | El modelo de visión devuelve las celdas tal cual (`"Oct-19"`, `"15.45"`, `"6,25"`). Un parser determinista con tests (`apps/api/src/schedule/parse.ts`) calcula las fechas y valida las horas. |
 | **Refresh token de Google como secreto** | Se obtiene una sola vez con `pnpm google:auth`. La base de datos no guarda tokens. |
 | **Sincronización por sondeo con `syncToken`** | Los canales *watch* de Google caducan y hay que renovarlos. Sondear cada 15 minutos sobra para un solo usuario. |
+| **Escrituras en lote** con la API batch de Google Calendar | Importar el calendario de la uni puede suponer más de cien eventos. Agrupados de 50 en 50, caben en el límite de subpeticiones del plan gratuito de Workers. |
+| **Planificador determinista** | El gimnasio y el sueño se calculan con código probado, no con el modelo. El modelo solo los explica y pregunta. |
 | **La imagen no se guarda** | Se guarda temporalmente en D1 para procesarla, se borra al usarla y, si no se usa, el cron la elimina a las 24 h. |
 
 ### Modelo de datos (D1)
@@ -63,11 +93,13 @@ Ver `apps/api/migrations/0001_init.sql`. Tablas principales:
 - `planned_shifts`: horario planificado que sale de la foto. Las horas reales irán en otra tabla en la fase 4.
 - `schedule_uploads`: lecturas de la foto pendientes de confirmar.
 - `messages`: historial del chat.
+- `api_cache`: caché del tiempo y de las rutas.
 - `credentials` y `sessions`: passkeys y sesiones.
 
-### Herramientas del agente (fase 1)
+### Herramientas del agente
 
-`list_events`, `create_event`, `move_event`, `delete_event`, `find_free_slots`, `parse_schedule_photo` y `confirm_schedule_import`.
+- Fase 1: `list_events`, `create_event`, `move_event`, `delete_event`, `find_free_slots`, `parse_schedule_photo` y `confirm_schedule_import`.
+- Fase 2: `import_university_calendar`, `find_conflicts`, `plan_gym_week`, `get_sleep_plan`, `get_route`, `get_weather`, `get_daily_briefing` y `get_evening_review`.
 
 Cada herramienta tiene un esquema zod. Si el modelo envía argumentos que no pasan la validación, recibe el error con una pista y puede corregirse.
 
@@ -185,7 +217,23 @@ Para usar otro proveedor compatible con OpenAI, cambia `LLM_BASE_URL` y `LLM_MOD
 
 Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actualiza el secreto.
 
-### 4. Acceso
+### 4. Calendario de la uni y rutas
+
+1. En Lukkari, copia la URL iCal de tu calendario y súbela como secreto. El parámetro `hash=` de la URL funciona como una contraseña.
+
+   ```bash
+   pnpm --filter @marlon/api exec wrangler secret put UNIVERSITY_ICAL_URL
+   ```
+
+2. Opcional, para las horas de salida en bus: en Google Cloud Console activa la **Routes API**, crea una clave de API **restringida a la Routes API** y súbela como secreto. Sin ella, Marlon usa el trayecto estimado de los ajustes.
+
+   ```bash
+   pnpm --filter @marlon/api exec wrangler secret put GOOGLE_MAPS_API_KEY
+   ```
+
+3. Rellena en Ajustes las direcciones de casa, el trabajo, la uni y el gimnasio, y si hace falta la ciudad con sus coordenadas para el tiempo (por defecto, Turku).
+
+### 5. Acceso
 
 1. Genera un secreto de sesión de al menos 32 caracteres:
 
@@ -213,7 +261,7 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 Una vez registrada la primera passkey, el código ya no basta: para añadir otra hay que estar dentro.
 
-### 5. Publicar
+### 6. Publicar
 
 ```bash
 pnpm deploy
@@ -238,7 +286,9 @@ En el iPhone, abre la URL en Safari, ve a *Compartir > Añadir a pantalla de ini
 Los límites cambian. **Compruébalos en la documentación oficial antes de desplegar.** Esto es lo que condiciona el diseño:
 
 - **Workers (plan gratuito):** el tiempo de CPU por petición es corto. La espera a Google y al modelo no cuenta como CPU, por eso las imágenes se procesan en el navegador. El número de subpeticiones por invocación también está limitado, así que importar un horario solo crea, mueve o borra los turnos que cambian.
-- **D1 y Cron Triggers:** el uso de un solo usuario queda muy por debajo de los límites gratuitos.
+- **D1 y Cron Triggers:** el uso de un solo usuario queda muy por debajo de los límites gratuitos. Marlon usa dos crons: cada 15 minutos y cada 3 horas.
+- **Routes API:** en la tarifa actual de Google Maps Platform cada SKU tiene llamadas gratuitas al mes (las de nivel Essentials, unas 10 000). Comprueba en la consola qué SKU usan las rutas en transporte público y en bici. Con la caché y sin consultar la bici en invierno, el uso de una persona queda muy por debajo.
+- **Open-Meteo:** gratis para uso no comercial, sin clave, con un uso razonable de unas 10 000 llamadas al día. Marlon guarda la previsión una hora en caché.
 - **Gemini (AI Studio):** los límites de peticiones por minuto y por día dependen del modelo y del proyecto. Los errores 429 se reintentan con espera y, si persisten, Marlon lo dice con naturalidad.
 
 ## Limitaciones de iOS
@@ -264,6 +314,12 @@ pnpm typecheck
 - `apps/api/test/schedule-import.test.ts`: importación completa desde el chat, sobrescritura de solo lo planificado, correcciones y permiso para la capa gratuita.
 - `apps/api/test/routes.test.ts`: autenticación, protección de rutas y flujo de la API.
 - `apps/api/test/llm.test.ts`: proveedor compatible con OpenAI (reintentos y herramientas) y enrutado por sensibilidad.
+- `apps/api/test/ical.test.ts`: iCal (zonas, días completos, RRULE con cambio de hora, EXDATE, RECURRENCE-ID).
+- `apps/api/test/university.test.ts`: sincronización de la uni sin duplicados, cambios, cancelaciones, solapes y que la URL secreta no aparezca en los errores.
+- `apps/api/test/batch.test.ts`: API batch de Google Calendar.
+- `apps/api/test/planning.test.ts`: sueño (8 horas mínimo, avisos) y gimnasio (mañana, huecos justos, sin días seguidos, sin recortar sueño).
+- `apps/api/test/routes-weather.test.ts`: Routes API, hora de salida, caché, estimación, tiempo y bici.
+- `apps/api/test/phase2-tools.test.ts`: herramientas de la fase 2, buenos días, buenas noches y cron de la uni.
 - `apps/web/test/week.test.ts`: cálculo de la semana y turnos partidos por la medianoche.
 
 Los tests de la API usan un D1 en memoria sobre `node:sqlite` (`apps/api/test/d1-shim.ts`) con las mismas migraciones.
@@ -271,7 +327,7 @@ Los tests de la API usan un D1 en memoria sobre `node:sqlite` (`apps/api/test/d1
 ## Fases
 
 1. **Núcleo** (hecha): PWA, chat, capa de IA, Google Calendar, calendario visual y foto del horario.
-2. Planificación: calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
+2. **Planificación** (hecha): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
 3. Voz y pendientes: voz con botón, modo solo texto, pendientes, recordatorios y push.
 4. Dinero y comida: horas reales y sueldo, gastos, batch cooking, menú y lista de la compra.
 5. Bienestar y lectura: temporizadores, meditación, estiramientos, lectura, memoria y base de conocimiento.
