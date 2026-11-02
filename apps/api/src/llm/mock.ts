@@ -47,13 +47,18 @@ export class MockProvider implements LlmProvider {
 
     const last = req.messages[req.messages.length - 1];
     if (last?.role === "tool") {
-      let parsed: { ok?: boolean; error?: string; data?: { summary?: string } } = {};
+      let parsed: { ok?: boolean; error?: string; data?: { summary?: string; slots?: { start: string; end: string }[] } } = {};
       try {
         parsed = JSON.parse(last.content);
       } catch {
         /* nada */
       }
       if (parsed.ok === false) return { content: `No he podido hacerlo: ${parsed.error}`, toolCalls: [] };
+      const slots = parsed.data?.slots;
+      if (slots) {
+        const list = slots.map((s) => `${s.start.slice(11)} a ${s.end.slice(11)}`).join(", ");
+        return { content: slots.length ? `Tienes libre: ${list}.` : "Hoy no te queda ningún hueco libre.", toolCalls: [] };
+      }
       return { content: parsed.data?.summary ?? "Hecho, ya lo tienes en el calendario.", toolCalls: [] };
     }
 
