@@ -1,6 +1,6 @@
 import type { PreviewEvent, SchedulePreview, Settings } from "@marlon/shared";
 import { z } from "zod";
-import type { CalendarService } from "../calendar/service";
+import type { BulkOp, CalendarService } from "../calendar/service";
 import { newGroupId } from "../calendar/service";
 import { newId, nowIso } from "../lib/ids";
 import { localToUtcIso } from "../lib/time";
@@ -193,6 +193,8 @@ export interface ApplyResult {
   changed: number;
   removed: number;
   unchanged: number;
+  /** Operaciones que el calendario rechazó (se pueden reintentar). */
+  failed: string[];
 }
 
 /**
@@ -217,15 +219,19 @@ export async function applyImport(
   const tz = settings.timezone;
   const groupId = newGroupId();
   const meta = { actor: "marlon" as const, groupId };
-  const result: ApplyResult = { groupId, created: 0, changed: 0, removed: 0, unchanged: 0 };
+  const result: ApplyResult = { groupId, created: 0, changed: 0, removed: 0, unchanged: 0, failed: [] };
 
+  // 1. Se calcula qué hay que hacer con cada fecha.
+  const ops: BulkOp[] = [];
+  const opShift: (ParsedShift | null)[] = [];
+  const unchanged: { shift: ParsedShift; eventId: string }[] = [];
   for (const s of up.parsed.shifts) {
     const { start, end } = shiftInstants(s, tz);
     const existing = await calendar.findByKey(workKey(s.date));
-    let eventId: string;
     if (!existing) {
-      const ev = await calendar.create(
-        {
+      ops.push({
+        op: "create",
+        input: {
           title: settings.workEventTitle,
           start,
           end,
@@ -233,37 +239,56 @@ export async function applyImport(
           kind: "work_planned",
           marlonKey: workKey(s.date),
         },
-        meta,
-      );
-      eventId = ev.id;
-      result.created++;
+      });
+      opShift.push(s);
     } else if (existing.start !== start || existing.end !== end) {
-      const ev = await calendar.move(existing.id, start, end, meta);
-      eventId = ev.id;
-      result.changed++;
+      ops.push({ op: "move", id: existing.id, start, end });
+      opShift.push(s);
     } else {
-      eventId = existing.id;
-      result.unchanged++;
+      unchanged.push({ shift: s, eventId: existing.id });
     }
-    await db
+  }
+  for (const d of up.parsed.daysOff) {
+    const existing = await calendar.findByKey(workKey(d));
+    if (existing) {
+      ops.push({ op: "remove", id: existing.id });
+      opShift.push(null);
+    }
+  }
+
+  // 2. Todo de una vez (en Google, peticiones batch).
+  const { items } = await calendar.bulk(ops, meta);
+
+  // 3. Registro del horario planificado (nunca toca las horas reales).
+  const upsertShift = (s: ParsedShift, eventId: string | null) =>
+    db
       .prepare(
         `INSERT INTO planned_shifts (date, start_time, end_time, ends_next_day, hours, source_upload_id, event_id, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(date) DO UPDATE SET start_time = ?2, end_time = ?3, ends_next_day = ?4, hours = ?5,
            source_upload_id = ?6, event_id = ?7, updated_at = ?8`,
       )
-      .bind(s.date, s.start, s.end, s.endsNextDay ? 1 : 0, s.hours, uploadId, eventId, nowIso())
-      .run();
-  }
+      .bind(s.date, s.start, s.end, s.endsNextDay ? 1 : 0, s.hours, uploadId, eventId, nowIso());
 
-  for (const d of up.parsed.daysOff) {
-    const existing = await calendar.findByKey(workKey(d));
-    if (existing) {
-      await calendar.remove(existing.id, meta);
-      result.removed++;
-    }
-    await db.prepare(`DELETE FROM planned_shifts WHERE date = ?`).bind(d).run();
+  const stmts: D1PreparedStatement[] = [];
+  for (const u of unchanged) {
+    result.unchanged++;
+    stmts.push(upsertShift(u.shift, u.eventId));
   }
+  items.forEach((item, i) => {
+    const op = ops[i]!;
+    const s = opShift[i];
+    if (!item.ok) {
+      result.failed.push(item.error);
+      return;
+    }
+    if (op.op === "create") result.created++;
+    else if (op.op === "move") result.changed++;
+    else result.removed++;
+    if (s) stmts.push(upsertShift(s, item.event?.id ?? null));
+  });
+  for (const d of up.parsed.daysOff) stmts.push(db.prepare(`DELETE FROM planned_shifts WHERE date = ?`).bind(d));
+  if (stmts.length) await db.batch(stmts);
 
   await db
     .prepare(`UPDATE schedule_uploads SET status = 'confirmed', group_id = ? WHERE id = ?`)

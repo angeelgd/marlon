@@ -47,17 +47,39 @@ export class MockProvider implements LlmProvider {
 
     const last = req.messages[req.messages.length - 1];
     if (last?.role === "tool") {
-      let parsed: { ok?: boolean; error?: string; data?: { summary?: string; slots?: { start: string; end: string }[] } } = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let parsed: { ok?: boolean; error?: string; data?: any } = {};
       try {
         parsed = JSON.parse(last.content);
       } catch {
         /* nada */
       }
       if (parsed.ok === false) return { content: `No he podido hacerlo: ${parsed.error}`, toolCalls: [] };
-      const slots = parsed.data?.slots;
-      if (slots) {
-        const list = slots.map((s) => `${s.start.slice(11)} a ${s.end.slice(11)}`).join(", ");
-        return { content: slots.length ? `Tienes libre: ${list}.` : "Hoy no te queda ningún hueco libre.", toolCalls: [] };
+      const d = parsed.data ?? {};
+      if (Array.isArray(d.slots)) {
+        const list = d.slots.map((s: { start: string; end: string }) => `${s.start.slice(11)} a ${s.end.slice(11)}`).join(", ");
+        return { content: d.slots.length ? `Tienes libre: ${list}.` : "Hoy no te queda ningún hueco libre.", toolCalls: [] };
+      }
+      if (d.day_load) {
+        const leave = d.leave_for_next ? ` Para "${d.leave_for_next.title}" sal a las ${d.leave_for_next.leaveAt.slice(11)}.` : "";
+        return {
+          content: `Buenos días Ángel. Son las ${d.now.slice(11)} y hoy tienes un día ${d.day_load.level}.${leave} Vamos a por ello. ¿Alguna duda?`,
+          toolCalls: [],
+        };
+      }
+      if (d.tomorrow) {
+        return {
+          content: `Mañana es ${d.tomorrow_weekday}. Acuéstate a las ${d.sleep.bed_tonight.slice(11)} y levántate a las ${d.sleep.wake_tomorrow.slice(11)}. Descansa.`,
+          toolCalls: [],
+        };
+      }
+      if (Array.isArray(d.sessions)) {
+        return {
+          content: d.sessions.length
+            ? `Gimnasio esta semana: ${d.sessions.join("; ")}.`
+            : "Esta semana no cabe ninguna sesión de gimnasio sin recortar sueño.",
+          toolCalls: [],
+        };
       }
       return { content: parsed.data?.summary ?? "Hecho, ya lo tienes en el calendario.", toolCalls: [] };
     }
@@ -67,9 +89,11 @@ export class MockProvider implements LlmProvider {
     if (text.includes("hueco")) {
       return call("find_free_slots", { from_date: today(), to_date: today(), duration_minutes: 60 });
     }
-    if (text.includes("good morning") || text.includes("hello")) {
-      return { content: "Good morning Ángel, I'm in test mode, but I'm here.", toolCalls: [] };
+    if (text.includes("buenos días") || text.includes("buenos dias") || text.includes("good morning")) {
+      return call("get_daily_briefing", {});
     }
+    if (text.includes("buenas noches") || text.includes("good night")) return call("get_evening_review", {});
+    if (text.includes("gimnasio") || text.includes("gym")) return call("plan_gym_week", {});
     return { content: "Estoy en modo de prueba, pero te leo. ¿Qué organizamos?", toolCalls: [] };
   }
 }

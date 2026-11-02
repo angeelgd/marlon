@@ -13,7 +13,8 @@ import {
   transcribeSchedule,
   updateUploadParsed,
 } from "../../schedule/import";
-import { parseSchedule } from "../../schedule/parse";
+import { coveredRange, parseSchedule, type ParseResult } from "../../schedule/parse";
+import { replanGymWeek, weeksInRange } from "../../planning/apply";
 import { findFreeSlots } from "../../schedule/slots";
 import { defineTool, ToolError, type Tool, type ToolContext } from "./types";
 
@@ -205,6 +206,8 @@ export const parseSchedulePhoto = defineTool({
         removed: res.removed,
         unchanged: res.unchanged,
         conflicts_with_other_events: conflicts,
+        failed: res.failed.length ? res.failed : undefined,
+        gym_replanned: await replanAfterSchedule(ctx, parsed, res.groupId),
         summary: `He guardado ${parsed.shifts.length} turnos (${res.created} nuevos, ${res.changed} cambiados, ${res.removed} quitados).`,
       };
     }
@@ -269,10 +272,36 @@ export const confirmScheduleImport = defineTool({
     return {
       saved: true,
       ...res,
+      gym_replanned: await replanAfterSchedule(ctx, parsed, res.groupId),
       summary: `Horario guardado: ${res.created} nuevos, ${res.changed} cambiados, ${res.removed} quitados.`,
     };
   },
 });
+
+/**
+ * Con un horario nuevo, Marlon reajusta él solo el gimnasio de esas semanas
+ * y lo cuenta después.
+ */
+async function replanAfterSchedule(ctx: ToolContext, parsed: ParseResult, groupId: string) {
+  const range = coveredRange(parsed);
+  if (!range) return undefined;
+  const out = [];
+  for (const monday of weeksInRange(range.from, range.to, toLocalIso(ctx.now, tz(ctx)).slice(0, 10))) {
+    try {
+      const r = await replanGymWeek(ctx.calendar, ctx.settings, monday, ctx.now, { groupId });
+      out.push({
+        week: monday,
+        sessions: r.sessions.map((x) => `${x.start.slice(0, 10)} ${x.start.slice(11)}-${x.end.slice(11)}${x.tight ? " (justo)" : ""}`),
+        changes: r.created + r.changed + r.removed,
+        below_target: r.belowTarget || undefined,
+        sleep_warnings: r.sleepWarnings.length ? r.sleepWarnings : undefined,
+      });
+    } catch (err) {
+      out.push({ week: monday, error: (err as Error).message });
+    }
+  }
+  return out;
+}
 
 export const PHASE1_TOOLS: Tool[] = [
   listEvents,

@@ -9,6 +9,10 @@ import { authRoutes } from "./auth/webauthn";
 import { saveSettings } from "./db/settings";
 import type { Env } from "./env";
 import { applyImport, buildPreview, discardUpload, loadUpload } from "./schedule/import";
+import { purgeExpiredCache } from "./integrations/cache";
+import { addDays, toLocalIso } from "./lib/time";
+import { mondayOfDate, replanGymWeek } from "./planning/apply";
+import { syncUniversity } from "./university/sync";
 
 export const app = new Hono<{ Bindings: Env }>();
 
@@ -109,25 +113,54 @@ api.put("/settings", async (c) => {
   return c.json({ settings: await saveSettings(c.env.DB, parsed.data) });
 });
 
+api.post("/university/sync", async (c) => {
+  const { calendar, settings } = await calendarFor(c.env);
+  const r = await syncUniversity(c.env, calendar, settings);
+  if (r.skipped) return c.json({ error: "Falta el secreto UNIVERSITY_ICAL_URL." }, 400);
+  return c.json(r);
+});
+
+api.post("/gym/replan", async (c) => {
+  const { calendar, settings } = await calendarFor(c.env);
+  const today = toLocalIso(Date.now(), settings.timezone).slice(0, 10);
+  const r = await replanGymWeek(calendar, settings, mondayOfDate(today), Date.now());
+  return c.json({ ...r, changeIds: calendar.changeIds });
+});
+
 app.route("/api", api);
 app.all("/api/*", (c) => c.json({ error: "No encontrado." }, 404));
 
+export const UNIVERSITY_CRON = "7 */3 * * *";
+
+/** Tareas programadas. Se exporta para poder probarla. */
+export async function runCron(cron: string, env: Env, now = Date.now()): Promise<void> {
+  const { calendar, settings } = await calendarFor(env);
+  if (cron === UNIVERSITY_CRON) {
+    // Calendario de la uni cada pocas horas. Si cambia algo, se reajusta el gimnasio.
+    const r = await syncUniversity(env, calendar, settings, { now });
+    if (!r.skipped && r.created + r.changed + r.removed > 0) {
+      const today = toLocalIso(now, settings.timezone).slice(0, 10);
+      for (const monday of [mondayOfDate(today), addDays(mondayOfDate(today), 7)]) {
+        await replanGymWeek(calendar, settings, monday, now);
+      }
+    }
+    return;
+  }
+  // Cada 15 minutos: limpieza y sincronización con Google Calendar.
+  const dayAgo = new Date(now - 86_400_000).toISOString();
+  const nowIso = new Date(now).toISOString();
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM pending_images WHERE created_at < ?`).bind(dayAgo),
+    env.DB.prepare(`DELETE FROM sessions WHERE expires_at < ?`).bind(nowIso),
+    env.DB.prepare(`DELETE FROM auth_challenges WHERE expires_at < ?`).bind(nowIso),
+  ]);
+  await purgeExpiredCache(env.DB);
+  await syncCalendar(env.DB, calendar);
+}
+
 export default {
   fetch: app.fetch,
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(
-      (async () => {
-        // Limpieza de imágenes que no se llegaron a usar, sesiones y retos caducados.
-        const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
-        const now = new Date().toISOString();
-        await env.DB.batch([
-          env.DB.prepare(`DELETE FROM pending_images WHERE created_at < ?`).bind(dayAgo),
-          env.DB.prepare(`DELETE FROM sessions WHERE expires_at < ?`).bind(now),
-          env.DB.prepare(`DELETE FROM auth_challenges WHERE expires_at < ?`).bind(now),
-        ]);
-        const { calendar } = await calendarFor(env);
-        await syncCalendar(env.DB, calendar);
-      })().catch((err) => console.error("cron falló", err)),
-    );
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runCron(event.cron, env).catch((err) => console.error("cron falló", err)));
   },
 } satisfies ExportedHandler<Env>;

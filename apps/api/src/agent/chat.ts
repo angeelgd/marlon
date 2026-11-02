@@ -11,6 +11,7 @@ import { runAgent, trimHistory } from "./loop";
 import { detectLanguage, polish } from "./style";
 import { buildSystemPrompt } from "./system-prompt";
 import { PHASE1_TOOLS } from "./tools";
+import { PHASE2_TOOLS } from "./tools/planning";
 import type { ToolContext } from "./tools/types";
 
 const HISTORY_LIMIT = 30;
@@ -101,7 +102,7 @@ export async function handleChat(env: Env, req: ChatRequest, now = Date.now()): 
       llm: getLlm(env),
       system: buildSystemPrompt(settings, now, detectLanguage(req.text)),
       history: [...history, userMsg],
-      tools: PHASE1_TOOLS,
+      tools: [...PHASE1_TOOLS, ...PHASE2_TOOLS],
       ctx,
     });
     const polished = polish(run.text);

@@ -19,6 +19,11 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   GOOGLE_REFRESH_TOKEN?: string;
 
+  /** Clave de Google Maps Platform (Routes API). Opcional: sin ella se estima el trayecto. */
+  GOOGLE_MAPS_API_KEY?: string;
+  /** URL iCal de Lukkari. Su parámetro hash= es una contraseña: solo como secreto. */
+  UNIVERSITY_ICAL_URL?: string;
+
   SESSION_SECRET?: string;
   SETUP_TOKEN?: string;
 

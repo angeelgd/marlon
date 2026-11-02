@@ -24,6 +24,47 @@ export const SettingsSchema = z.object({
   /** Horas del día que se consideran para buscar huecos. */
   dayStart: z.string().regex(/^\d{2}:\d{2}$/).default("07:00"),
   dayEnd: z.string().regex(/^\d{2}:\d{2}$/).default("22:30"),
+
+  /* ---- Fase 2: sueño y rutina ---- */
+  /** Horas de sueño. Regla intocable: nunca menos de 8. */
+  sleepHours: z.number().min(8).max(12).default(8),
+  /** Desde que te levantas hasta que sales de casa. */
+  morningRoutineMin: z.number().int().min(0).max(180).default(45),
+  /** Desde que llegas a casa hasta que te acuestas. */
+  windDownMin: z.number().int().min(0).max(180).default(30),
+  /** Hora de levantarse en días sin compromisos. */
+  freeDayWake: z.string().regex(/^\d{2}:\d{2}$/).default("08:30"),
+  /** Trayecto estimado cuando no hay ruta calculada (minutos). */
+  defaultCommuteMin: z.number().int().min(0).max(180).default(30),
+  /** Margen para llegar antes de cada evento (minutos). */
+  arrivalMarginMin: z.number().int().min(0).max(60).default(10),
+
+  /* ---- Fase 2: gimnasio ---- */
+  gymSessionsMin: z.number().int().min(0).max(7).default(3),
+  gymSessionsMax: z.number().int().min(0).max(7).default(4),
+  /** Bloque flexible del gimnasio, incluido el trayecto de ida y vuelta. */
+  gymBlockMinMin: z.number().int().min(30).max(300).default(80),
+  gymBlockMaxMin: z.number().int().min(30).max(300).default(140),
+  gymTravelMin: z.number().int().min(0).max(60).default(10),
+  gymPreferMorning: z.boolean().default(true),
+  /** Desde que te levantas hasta salir al gimnasio. */
+  gymMorningPrepMin: z.number().int().min(0).max(120).default(15),
+  /** Tras volver del gimnasio, antes de salir de nuevo (ducha, comida). */
+  gymAfterMin: z.number().int().min(0).max(120).default(30),
+
+  /* ---- Fase 2: rutas, bici y tiempo ---- */
+  cityName: z.string().default("Turku"),
+  latitude: z.number().min(-90).max(90).default(60.4518),
+  longitude: z.number().min(-180).max(180).default(22.2666),
+  /** Meses (1-12) en los que la bici es una opción. Fuera de ellos, nunca. */
+  bikeFromMonth: z.number().int().min(1).max(12).default(4),
+  bikeToMonth: z.number().int().min(1).max(12).default(10),
+  /** Trayecto máximo en bici para proponerla (minutos). */
+  bikeMaxMin: z.number().int().min(5).max(90).default(25),
+
+  /* ---- Fase 2: resúmenes ---- */
+  morningBriefing: z.boolean().default(true),
+  eveningReview: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});

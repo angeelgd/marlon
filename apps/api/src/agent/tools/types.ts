@@ -15,6 +15,8 @@ export interface ToolContext {
   imageIds: string[];
   now: number;
   llm: (opts?: RouteOptions) => LlmProvider;
+  /** fetch para APIs externas (se sustituye en los tests). */
+  fetchImpl?: typeof fetch;
   /** Salidas hacia la interfaz que pueden rellenar las herramientas. */
   out: {
     quickReplies: string[];
