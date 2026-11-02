@@ -428,3 +428,5 @@ input, textarea { font: inherit; color: inherit; }
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 .toast.action { background: var(--accent); color: var(--accent-ink); font-weight: 600; bottom: calc(var(--safe-bottom) + 130px); }
+.settings .actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings .row2 label { min-width: 0; }

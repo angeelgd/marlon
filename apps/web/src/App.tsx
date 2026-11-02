@@ -304,6 +304,19 @@ function Main({ onLogout }: { onLogout(): void }) {
             const r = await api.saveSettings(patch);
             setSettings(r.settings);
           }}
+          onSyncUniversity={async () => {
+            const r = await api.syncUniversity();
+            await Promise.all([loadEvents({ markChanges: true }), loadHistory()]);
+            const solapes = r.conflicts.length ? ` Ojo: ${r.conflicts.length} solapes con el trabajo.` : "";
+            return `Uni: ${r.created} nuevas, ${r.changed} cambiadas, ${r.removed} quitadas.${solapes}`;
+          }}
+          onReplanGym={async () => {
+            const r = await api.replanGym();
+            await Promise.all([loadEvents({ markChanges: true }), loadHistory()]);
+            return r.sessions.length
+              ? `Gimnasio: ${r.sessions.length} sesiones esta semana (${r.created + r.changed + r.removed} cambios).`
+              : "Esta semana no cabe el gimnasio sin recortar sueño.";
+          }}
         />
       )}
     </div>

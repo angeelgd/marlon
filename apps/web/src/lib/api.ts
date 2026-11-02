@@ -62,6 +62,13 @@ export const api = {
   discardSchedule: (id: string) => post<{ ok: true }>(`/schedule/${encodeURIComponent(id)}/discard`),
   schedule: (id: string) => request<SchedulePreview>(`/schedule/${encodeURIComponent(id)}`),
 
+  syncUniversity: () =>
+    post<{ created: number; changed: number; removed: number; unchanged: number; conflicts: unknown[] }>("/university/sync"),
+  replanGym: () =>
+    post<{ sessions: { start: string; end: string }[]; created: number; changed: number; removed: number; belowTarget: boolean }>(
+      "/gym/replan",
+    ),
+
   settings: () => request<{ settings: Settings; calendarBackend: "google" | "local" }>("/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     request<{ settings: Settings }>("/settings", { method: "PUT", body: JSON.stringify(patch) }),
