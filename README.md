@@ -2,10 +2,11 @@
 
 Agente personal de organización para una sola persona. Es una PWA que se instala en el iPhone y habla con un agente de IA que organiza la semana sobre Google Calendar.
 
-> **Estado: fases 1, 2 y 3.**
+> **Estado: fases 1 a 4.**
 > - Fase 1 (núcleo): PWA, chat, capa de IA intercambiable, Google Calendar, calendario semanal animado con historial y deshacer, y foto del horario de trabajo.
 > - Fase 2 (planificación): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
 > - Fase 3 (voz y pendientes): voz con botón, modo solo texto, pendientes, recordatorios y notificaciones push.
+> - Fase 4 (dinero y comida): horas reales y sueldo, gastos, vídeos de batch cooking, menú y lista de la compra.
 
 ## Índice
 
@@ -84,6 +85,44 @@ Agente personal de organización para una sola persona. Es una PWA que se instal
   - Web Push está implementado con WebCrypto (RFC 8291 y VAPID, RFC 8292), sin librerías de Node. Se prueba con los vectores oficiales del RFC 8291 y descifrando con la librería de referencia.
   - En iOS solo funcionan con la app instalada en la pantalla de inicio (iOS 16.4 o superior). El permiso se pide al tocar "Activar notificaciones" en Ajustes.
 
+### Fase 4: dinero y comida
+
+- **Horas reales y sueldo** (`apps/api/src/money`).
+  - El horario planificado (la foto) y las horas reales se guardan en tablas separadas: una foto nueva nunca toca lo real.
+  - "Hoy salí a las 21:00" actualiza solo ese día. Si no dices nada, se cuenta la hora planificada.
+  - A fin de mes, Marlon calcula lo ganado con las horas reales y con el horario completo, la diferencia, y lista los días que difieren para que los confirmes. También puedes editarlos en *Más > Dinero*.
+  - Es una **estimación bruta**, y siempre lo recuerda: hay que contrastarla con la nómina.
+- **Reglas de pago**: tabla editable en *Más > Dinero* con fecha de vigencia. Nada de importes en el código: la tabla inicial la crea la migración `0004`.
+  - El turno se parte por tramos en los límites de las 06:00, las 15:00 (víspera), las 18:00 y las 24:00.
+  - Domingos y festivos: base y suplementos ×2. El suplemento de noche en domingo se marca "por confirmar" hasta que lo confirmes en la tabla.
+  - Víspera de festivo (Nochevieja, Sábado Santo, 30 de abril, víspera de San Juan y Nochebuena, salvo si cae en domingo): desde las 15:00, +50 %.
+    - Modo "probable" (por defecto): el 50 % sube también la base.
+    - Modo "mínimo": solo sube el suplemento.
+    - Al cambiar de modo se recalcula todo. Esos días salen como "importe por confirmar".
+  - **Turnos que cruzan la medianoche hacia un domingo o festivo**: no se supone nada. Quedan sin calcular, con las dos opciones a la vista, hasta que eliges la regla.
+  - **Redondeo**: todo se calcula en céntimos·minuto, que es exacto. El importe de cada turno se muestra con 3 decimales sin redondear (15:45 a 22:00 = 91,225 €) y solo se redondea el total del mes, a céntimos y mitad hacia arriba, una única vez. Así no se acumulan errores de redondeo turno a turno.
+  - **Vigencia**: la tabla vale hasta el 30 de junio de 2027. Un mes antes llega un aviso para añadir la nueva.
+  - **Festivos de Finlandia**: se calculan en el propio código (Pascua por el algoritmo gregoriano y las fechas fijas o móviles de la ley) en lugar de con una API. Son reglas estables, así no hay dependencia de red y queda cubierto por tests.
+- **Gastos** (`log_expense`, `parse_receipt_photo`, `set_budget_item`, `expense_summary`).
+  - Se registran por voz o texto ("me acabo de gastar 4,50 en un café"), por foto del ticket o a mano en *Más > Dinero*.
+  - También guardas el sueldo neto, el alquiler y los gastos fijos.
+  - El resumen usa la regla 50/30/20 y te dice cuánto apartar este mes según el ritmo que llevas.
+  - Incluye comparaciones concretas, por ejemplo: "este mes llevas 45 € en 10 cafés; con un termo y un paquete habrías ahorrado unos 16,50 €".
+  - Recuerda que no es asesor financiero.
+- **Privacidad de los datos económicos** (`apps/api/src/money/sensitivity.ts`):
+  - Si hay clave de pago (`LLM_PAID_API_KEY`), todo turno con dinero, y la transcripción de las notas de voz, va por ella.
+  - Si solo hay capa gratuita, Marlon **pregunta antes de enviar**: "Enviar esta vez", "Enviar siempre" o "No enviar".
+  - Los mensajes con datos económicos quedan marcados y **nunca se reenvían en el historial** por la capa gratuita.
+  - Las herramientas de dinero se niegan a funcionar en la capa gratuita sin permiso, aunque el mensaje no pareciera económico.
+- **Comida** (`apps/api/src/food`).
+  - El día antes del día de cocinar (el sábado por defecto) llega un aviso con ideas de batch cooking. Marlon busca uno o dos vídeos veganos y altos en proteína con la YouTube Data API, sin repetir los ya propuestos, y resume lo que aporta cada uno.
+  - Entiende la receta **viendo el vídeo**: Gemini acepta URLs de YouTube en su API nativa.
+  - **Plan B**: si eso falla, usa el título y la descripción del vídeo. La API oficial no permite descargar subtítulos de vídeos ajenos sin permiso de su dueño, así que la descripción es la alternativa viable y legal. Muchos canales ponen ahí la receta.
+  - Con varias recetas arma el **menú semanal**: reparte las raciones alternando recetas, marca lo que conviene congelar y pone la cena en táper los días de turno de tarde.
+  - También hace la **lista de la compra** por secciones, con casillas para ir tachando en *Más > Comida*, y comprueba el **presupuesto**.
+  - Reserva la **sesión de cocina** en el calendario: el domingo antes si hay hueco, y si no el sábado o el lunes.
+  - Revisa proteína, B12, hierro, omega 3, calcio, yodo y vitamina D, y recuerda que no sustituye a un profesional.
+
 ## Arquitectura
 
 ```
@@ -122,6 +161,11 @@ Ver `apps/api/migrations/0001_init.sql`. Tablas principales:
 - `api_cache`: caché del tiempo y de las rutas.
 - `pendings`: recordatorios, tareas, planes y cumpleaños, con el estado de la insistencia del día.
 - `push_subscriptions` y `notifications`: dispositivos suscritos y la cola de avisos.
+- `pay_rule_sets`: tablas de sueldo con vigencia.
+- `actual_shifts`: horas reales, separadas de `planned_shifts`.
+- `expenses` y `budget_items`: gastos, sueldo y gastos fijos.
+- `pending_consents`: mensaje con datos económicos esperando permiso.
+- `recipes` y `meal_plans`: recetas, menús y listas de la compra.
 - `credentials` y `sessions`: passkeys y sesiones.
 
 ### Herramientas del agente
@@ -129,6 +173,7 @@ Ver `apps/api/migrations/0001_init.sql`. Tablas principales:
 - Fase 1: `list_events`, `create_event`, `move_event`, `delete_event`, `find_free_slots`, `parse_schedule_photo` y `confirm_schedule_import`.
 - Fase 2: `import_university_calendar`, `find_conflicts`, `plan_gym_week`, `get_sleep_plan`, `get_route`, `get_weather`, `get_daily_briefing` y `get_evening_review`.
 - Fase 3: `add_pending`, `close_pending`, `list_pendings` y `snooze_pending`.
+- Fase 4: `log_actual_shift`, `calc_monthly_pay`, `set_pay_option`, `log_expense`, `parse_receipt_photo`, `delete_expense`, `set_budget_item`, `expense_summary`, `find_cooking_videos`, `analyze_cooking_video` y `build_menu_and_shopping_list`.
 
 Cada herramienta tiene un esquema zod. Si el modelo envía argumentos que no pasan la validación, recibe el error con una pista y puede corregirse.
 
@@ -206,7 +251,7 @@ Todo cabe en las capas gratuitas de Cloudflare, Google Cloud y Google AI Studio.
    pnpm --filter @marlon/api exec wrangler secret put LLM_API_KEY
    ```
 
-4. Opcional: si tienes una clave de una cuenta de pago (sus datos no se usan para entrenar), súbela también. Con ella, la foto del horario y, más adelante, los datos económicos irán siempre por esa clave.
+4. Opcional: si tienes una clave de una cuenta de pago (sus datos no se usan para entrenar), súbela también. Con ella, la foto del horario, los datos económicos y la transcripción de las notas de voz irán siempre por esa clave.
 
    ```bash
    pnpm --filter @marlon/api exec wrangler secret put LLM_PAID_API_KEY
@@ -262,7 +307,21 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 3. Rellena en Ajustes las direcciones de casa, el trabajo, la uni y el gimnasio, y si hace falta la ciudad con sus coordenadas para el tiempo (por defecto, Turku).
 
-### 5. Notificaciones push
+### 5. Vídeos de batch cooking (opcional)
+
+1. En Google Cloud Console, activa la **YouTube Data API v3** y crea una clave restringida a esa API. Súbela como secreto:
+
+   ```bash
+   pnpm --filter @marlon/api exec wrangler secret put YOUTUBE_API_KEY
+   ```
+
+2. Si tu modelo es Gemini, la misma `LLM_API_KEY` sirve para que Gemini vea los vídeos. Si usas otro proveedor, sube una clave de Gemini aparte:
+
+   ```bash
+   pnpm --filter @marlon/api exec wrangler secret put GEMINI_API_KEY
+   ```
+
+### 6. Notificaciones push
 
 1. Genera las claves VAPID. El comando imprime los valores, pero no los guarda en ningún archivo.
 
@@ -286,7 +345,7 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 3. En el iPhone, abre Marlon **desde el icono de la pantalla de inicio**, ve a *Ajustes > Activar notificaciones* y pulsa "Enviar una de prueba".
 
-### 6. Acceso
+### 7. Acceso
 
 1. Genera un secreto de sesión de al menos 32 caracteres:
 
@@ -314,7 +373,7 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 Una vez registrada la primera passkey, el código ya no basta: para añadir otra hay que estar dentro.
 
-### 7. Publicar
+### 8. Publicar
 
 ```bash
 pnpm deploy
@@ -341,6 +400,8 @@ Los límites cambian. **Compruébalos en la documentación oficial antes de desp
 - **Workers (plan gratuito):** el tiempo de CPU por petición es corto. La espera a Google y al modelo no cuenta como CPU, por eso las imágenes se procesan en el navegador. El número de subpeticiones por invocación también está limitado, así que importar un horario solo crea, mueve o borra los turnos que cambian.
 - **D1 y Cron Triggers:** el uso de un solo usuario queda muy por debajo de los límites gratuitos. Marlon usa dos crons: cada 5 minutos (Google Calendar y notificaciones) y cada 3 horas (calendario de la uni). Por eso un aviso puede llegar hasta 5 minutos tarde.
 - **Routes API:** en la tarifa actual de Google Maps Platform cada SKU tiene llamadas gratuitas al mes (las de nivel Essentials, unas 10 000). Comprueba en la consola qué SKU usan las rutas en transporte público y en bici. Con la caché y sin consultar la bici en invierno, el uso de una persona queda muy por debajo.
+- **YouTube Data API:** cada búsqueda cuesta 100 unidades de una cuota diaria limitada; consultar los detalles de un vídeo, 1. Marlon hace como mucho dos búsquedas por semana y las guarda en caché.
+- **Gemini con vídeos de YouTube:** en la capa gratuita hay un límite de horas de vídeo al día (8 horas según la documentación actual). Solo vídeos públicos. Cada receta se analiza una vez y se guarda.
 - **Open-Meteo:** gratis para uso no comercial, sin clave, con un uso razonable de unas 10 000 llamadas al día. Marlon guarda la previsión una hora en caché.
 - **Gemini (AI Studio):** los límites de peticiones por minuto y por día dependen del modelo y del proyecto. Los errores 429 se reintentan con espera y, si persisten, Marlon lo dice con naturalidad.
 
@@ -349,7 +410,7 @@ Los límites cambian. **Compruébalos en la documentación oficial antes de desp
 - Las notificaciones push solo funcionan con la PWA instalada en la pantalla de inicio, en iOS 16.4 o superior, y el permiso se pide con un toque. Cada push tiene que mostrar una notificación visible: no hay avisos invisibles.
 - El modo silencioso (`silent`) de las notificaciones depende de iOS. Para silencio total en clase o en el trabajo, combínalo con un modo de concentración.
 - La voz del navegador solo puede hablar después de un gesto. Por eso el botón del micro la "desbloquea" al pulsarlo.
-- Las notas de voz se transcriben con el modelo configurado. Si dictas datos económicos y solo hay clave gratuita, van por la capa gratuita. En la fase 4 se pedirá permiso antes de enviar datos económicos escritos o dictados.
+- Las notas de voz se transcriben antes de saber lo que dicen. Si hay clave de pago, la transcripción va siempre por ella. Si solo hay capa gratuita, el audio de una nota con datos económicos sí pasa por ella para transcribirse, aunque luego Marlon pide permiso antes de tratar su contenido. Para evitarlo del todo, configura la clave de pago o escribe esos datos.
 - Una PWA no puede mantener un temporizador exacto con la pantalla bloqueada. Los temporizadores de la fase 5 programarán una notificación push para cada cambio de fase en lugar de depender de un contador en el navegador.
 - iOS congela la app en segundo plano. Al volver, Marlon sincroniza con Google Calendar y anima lo que haya cambiado.
 
@@ -379,6 +440,11 @@ pnpm typecheck
 - `apps/api/test/webpush.test.ts`: cifrado Web Push idéntico al ejemplo del RFC 8291, descifrado con la implementación de referencia y JWT de VAPID verificado con `node:crypto`.
 - `apps/api/test/pendings.test.ts`: insistencia gradual (intervalos, sin avisos en turnos ni de noche, máximo por día, vencidos, aplazados) y cumpleaños, incluido el 29 de febrero.
 - `apps/api/test/phase3.test.ts`: planificador y envío de notificaciones, modo solo texto, suscripciones caducadas, nota de voz de punta a punta y rutas de la API.
+- `apps/api/test/pay.test.ts`: **los tests obligatorios del calculador** (domingo de 12:45 a 20:00 = 204,25 €, domingo de 13:00 a 21:00 = 227,60 €, día normal de 15:45 a 22:00 = 91,225 €), suplementos de noche, vísperas en los dos modos, víspera en domingo, medianoche hacia domingo y festivos de Finlandia.
+- `apps/api/test/payroll.test.ts`: horas reales frente a planificadas, días que difieren, turnos extra, por confirmar, tablas con vigencia y aviso de caducidad.
+- `apps/api/test/money.test.ts`: detección de datos económicos, flujo de permiso (esta vez, siempre, no enviar), clave de pago, historial sin datos económicos, herramientas que se niegan y resumen 50/30/20 con comparaciones.
+- `apps/api/test/food.test.ts`: YouTube, receta con Gemini (plan A) y desde la descripción (plan B), menú, lista de la compra, nutrición, presupuesto y sesión de cocina.
+- `apps/api/test/phase4-routes.test.ts`: avisos de caducidad de la tabla y de batch cooking, y rutas de dinero y comida.
 - `apps/web/test/week.test.ts`: cálculo de la semana y turnos partidos por la medianoche.
 - `apps/web/test/wav.test.ts`: conversión a WAV (cabecera, mono, remuestreo y base64).
 
@@ -389,5 +455,5 @@ Los tests de la API usan un D1 en memoria sobre `node:sqlite` (`apps/api/test/d1
 1. **Núcleo** (hecha): PWA, chat, capa de IA, Google Calendar, calendario visual y foto del horario.
 2. **Planificación** (hecha): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
 3. **Voz y pendientes** (hecha): voz con botón, modo solo texto, pendientes, recordatorios y push.
-4. Dinero y comida: horas reales y sueldo, gastos, batch cooking, menú y lista de la compra.
+4. **Dinero y comida** (hecha): horas reales y sueldo, gastos, batch cooking, menú y lista de la compra.
 5. Bienestar y lectura: temporizadores, meditación, estiramientos, lectura, memoria y base de conocimiento.
