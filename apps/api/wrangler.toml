@@ -1,0 +1,29 @@
+# Configuración del Worker. Aquí NO van secretos: se cargan con `wrangler secret put`
+# (producción) o en apps/api/.dev.vars (local). Ver README.
+name = "marlon"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# La PWA compilada se sirve desde el mismo Worker (mismo origen que la API).
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "marlon"
+# Sustituye por el id que devuelve `wrangler d1 create marlon`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+# Sincronización incremental con Google Calendar cada 15 minutos.
+crons = ["*/15 * * * *"]
+
+[vars]
+LLM_PROVIDER = "openai-compatible"
+LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+LLM_MODEL = "gemini-2.5-flash"

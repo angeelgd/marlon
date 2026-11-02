@@ -1,0 +1,27 @@
+{
+  "name": "@marlon/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply marlon --local",
+    "db:migrate:remote": "wrangler d1 migrations apply marlon --remote"
+  },
+  "dependencies": {
+    "@marlon/shared": "workspace:*",
+    "@simplewebauthn/server": "^14.0.3",
+    "hono": "^4.13.16",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261102.1",
+    "@types/node": "^22.10.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.156.1"
+  }
+}
