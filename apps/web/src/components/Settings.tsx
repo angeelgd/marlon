@@ -1,5 +1,6 @@
 import type { Settings as S } from "@marlon/shared";
 import { useState } from "react";
+import type { PushState } from "../lib/push";
 
 interface Props {
   settings: S;
@@ -10,9 +11,22 @@ interface Props {
   /** Acciones rápidas; devuelven un texto para mostrar. */
   onSyncUniversity(): Promise<string>;
   onReplanGym(): Promise<string>;
+  push: PushState;
+  onEnablePush(): Promise<string>;
+  onDisablePush(): Promise<string>;
+  onTestPush(): Promise<string>;
 }
 
-export function Settings({ settings, calendarBackend, onSave, onClose, onLogout, onSyncUniversity, onReplanGym }: Props) {
+const PUSH_TEXT: Record<PushState, string> = {
+  on: "Activadas en este dispositivo.",
+  off: "Desactivadas.",
+  denied: "Bloqueadas. Actívalas en Ajustes del iPhone > Notificaciones > Marlon.",
+  "needs-install": "En el iPhone solo funcionan con Marlon instalado: Safari > Compartir > Añadir a pantalla de inicio, y ábrelo desde el icono.",
+  unsupported: "Este navegador no admite notificaciones push.",
+};
+
+export function Settings(props: Props) {
+  const { settings, calendarBackend, onSave, onClose, onLogout, onSyncUniversity, onReplanGym, push } = props;
   const [draft, setDraft] = useState<S>(settings);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -158,6 +172,48 @@ export function Settings({ settings, calendarBackend, onSave, onClose, onLogout,
             <input type="checkbox" {...check("eveningReview")} />
             Repaso corto por la noche
           </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Voz y avisos</legend>
+          <label className="row">
+            <input type="checkbox" {...check("textOnly")} />
+            Modo solo texto (sin voz ni sonido, también en los avisos)
+          </label>
+          <label>
+            Voz de las respuestas
+            <select value={draft.voice} onChange={(e) => setDraft({ ...draft, voice: e.target.value as S["voice"] })}>
+              <option value="browser">La del iPhone (gratis)</option>
+              <option value="provider">La del proveedor (si está configurada)</option>
+            </select>
+          </label>
+          <label className="row">
+            <input type="checkbox" {...check("pendingNudges")} />
+            Insistir con los pendientes del día
+          </label>
+          <div className="row2">
+            <label>Aviso de salida (min antes, 0 = no)<input {...num("leaveReminderMin", { min: 0, max: 60 })} /></label>
+            <label>Repaso antes de dormir (min)<input {...num("eveningReviewLeadMin", { min: 0, max: 180 })} /></label>
+            <label>Cumpleaños, avisar (días antes)<input {...num("birthdayNoticeDays", { min: 0, max: 60 })} /></label>
+          </div>
+          <p className="muted small">Notificaciones: {PUSH_TEXT[push]}</p>
+          <div className="actions-row">
+            {push === "off" && (
+              <button type="button" className="btn small" disabled={busy !== null} onClick={() => action("push", props.onEnablePush)}>
+                Activar notificaciones
+              </button>
+            )}
+            {push === "on" && (
+              <>
+                <button type="button" className="btn ghost small" disabled={busy !== null} onClick={() => action("test", props.onTestPush)}>
+                  Enviar una de prueba
+                </button>
+                <button type="button" className="btn ghost small" disabled={busy !== null} onClick={() => action("push", props.onDisablePush)}>
+                  Desactivar aquí
+                </button>
+              </>
+            )}
+          </div>
         </fieldset>
 
         <fieldset>

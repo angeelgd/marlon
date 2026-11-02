@@ -4,6 +4,7 @@ import type {
   ChangeLogEntry,
   ChatRequest,
   ChatResponse,
+  Pending,
   SchedulePreview,
   Settings,
   UiMessage,
@@ -68,6 +69,17 @@ export const api = {
     post<{ sessions: { start: string; end: string }[]; created: number; changed: number; removed: number; belowTarget: boolean }>(
       "/gym/replan",
     ),
+
+  pushKey: () => request<{ publicKey: string }>("/push/key"),
+  pushSubscribe: (sub: PushSubscriptionJSON) => post<{ ok: true }>("/push/subscribe", sub),
+  pushUnsubscribe: (endpoint: string) => post<{ ok: true }>("/push/unsubscribe", { endpoint }),
+  pushTest: () => post<{ sent: number; failed: number }>("/push/test"),
+
+  pendings: (done = false) => request<{ pendings: Pending[] }>(`/pendings${done ? "?done=1" : ""}`),
+  closePending: (id: string) => post<{ pending: Pending }>(`/pendings/${encodeURIComponent(id)}/close`),
+  reopenPending: (id: string) => post<{ ok: true }>(`/pendings/${encodeURIComponent(id)}/reopen`),
+  deletePending: (id: string) =>
+    request<{ ok: true }>(`/pendings/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "content-type": "application/json" } }),
 
   settings: () => request<{ settings: Settings; calendarBackend: "google" | "local" }>("/settings"),
   saveSettings: (patch: Partial<Settings>) =>

@@ -7,6 +7,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      // Service worker propio: además de la caché, recibe las notificaciones push.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
         name: "Marlon",
@@ -25,10 +29,8 @@ export default defineConfig({
           { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
-      workbox: {
-        // La API nunca se cachea: los datos son personales y deben estar frescos.
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [],
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"],
       },
     }),
   ],

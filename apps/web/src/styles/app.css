@@ -430,3 +430,89 @@ input, textarea { font: inherit; color: inherit; }
 .toast.action { background: var(--accent); color: var(--accent-ink); font-weight: 600; bottom: calc(var(--safe-bottom) + 130px); }
 .settings .actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .settings .row2 label { min-width: 0; }
+
+/* ---------------------------------------------------------------- */
+/* Fase 3: voz, solo texto y pendientes                             */
+/* ---------------------------------------------------------------- */
+.narrow .tabs button { font-size: 13px; padding: 6px 2px; }
+.text-only {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+}
+.text-only.on { background: var(--work); color: #10131a; border-color: transparent; }
+.mic-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 18px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.mic-btn.recording, .mic-btn.starting { background: var(--danger); transform: scale(1.25); transition: transform 0.15s; }
+.mic-btn:disabled { opacity: 0.4; }
+.recording-bar {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--safe-bottom) + 64px);
+  background: var(--surface-2);
+  border: 1px solid var(--danger);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  z-index: 5;
+}
+.recording-bar.cancel { border-color: var(--muted); opacity: 0.8; }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: blink 1s infinite; }
+.chat { position: relative; }
+.settings select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.pendings { padding: 12px 14px; overflow-y: auto; flex: 1; }
+.pendings h2 { font-size: 17px; margin: 4px 0 12px; }
+.pending-group h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 6px; }
+.pending-group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pending-group li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 10px 8px 10px 12px;
+}
+.pending-group li.overdue { border-left: 3px solid var(--danger); }
+.pending-main { flex: 1; min-width: 0; }
+.pending-main p { margin: 0 0 2px; font-size: 15px; }
+.check {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: transparent;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+.check:active { background: var(--accent); }
+.small-x { width: 30px; height: 30px; font-size: 13px; color: var(--muted); }

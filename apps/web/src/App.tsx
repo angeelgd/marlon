@@ -1,16 +1,29 @@
-import type { AuthStatus, CalendarEvent, ChangeLogEntry, ChatImage, SchedulePreview, Settings as S, UiMessage } from "@marlon/shared";
-import { addDays, DEFAULT_SETTINGS } from "@marlon/shared";
+import type {
+  AuthStatus,
+  CalendarEvent,
+  ChangeLogEntry,
+  ChatImage,
+  ChatRequest,
+  Pending,
+  SchedulePreview,
+  Settings as S,
+  UiMessage,
+} from "@marlon/shared";
+import { addDays, DEFAULT_SETTINGS, toLocalIso } from "@marlon/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat } from "./components/Chat";
 import { History } from "./components/History";
+import { Pendings } from "./components/Pendings";
 import { Login } from "./components/Login";
 import { Settings } from "./components/Settings";
 import { WeekCalendar } from "./components/WeekCalendar";
 import { api, ApiError, setUnauthorizedHandler } from "./lib/api";
+import { disablePush, enablePush, pushState, type PushState } from "./lib/push";
+import { speak, stopSpeaking } from "./lib/speech";
 import { mondayOf, weekRange } from "./lib/week";
 
-type Tab = "chat" | "week" | "history";
-const TABS: Tab[] = ["chat", "week", "history"];
+type Tab = "chat" | "week" | "pendings" | "history";
+const TABS: Tab[] = ["chat", "week", "pendings", "history"];
 
 function useIsWide() {
   const q = "(min-width: 900px)";
@@ -41,6 +54,11 @@ export function App() {
   return <Main onLogout={() => api.logout().finally(refreshAuth)} />;
 }
 
+/** Quita ?tab= y ?say= de la URL sin recargar. */
+function clearUrlParams() {
+  window.history.replaceState(null, "", location.pathname);
+}
+
 function Main({ onLogout }: { onLogout(): void }) {
   const wide = useIsWide();
   const [tab, setTab] = useState<Tab>("chat");
@@ -59,12 +77,18 @@ function Main({ onLogout }: { onLogout(): void }) {
   const [highlight, setHighlight] = useState<Set<string>>(new Set());
   const [unseenChanges, setUnseenChanges] = useState(0);
 
+  const [pendings, setPendings] = useState<Pending[]>([]);
+  const [closing, setClosing] = useState<string | null>(null);
+  const [push, setPush] = useState<PushState>("off");
+
   const [history, setHistory] = useState<ChangeLogEntry[]>([]);
   const [undoing, setUndoing] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const eventsRef = useRef(events);
   eventsRef.current = events;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   const showToast = useCallback((t: string) => {
     setToast(t);
@@ -104,8 +128,25 @@ function Main({ onLogout }: { onLogout(): void }) {
     }
   }, []);
 
+  const loadPendings = useCallback(async () => {
+    try {
+      setPendings((await api.pendings()).pendings);
+    } catch {
+      /* se reintenta al volver a abrir */
+    }
+  }, []);
+
   // Carga inicial.
   useEffect(() => {
+    void loadPendings();
+    void pushState().then(setPush);
+    // Al tocar una notificación se abre con ?tab=... o ?say=... (por ejemplo "buenos días").
+    const params = new URLSearchParams(location.search);
+    const wantTab = params.get("tab");
+    if (wantTab && (TABS as string[]).includes(wantTab)) setTab(wantTab as Tab);
+    const say = params.get("say");
+    if (wantTab || say) clearUrlParams();
+    if (say) void talk({ text: say.slice(0, 200), images: [] }, say);
     api.settings().then((r) => {
       setSettings(r.settings);
       setBackend(r.calendarBackend);
@@ -135,21 +176,34 @@ function Main({ onLogout }: { onLogout(): void }) {
   useEffect(() => {
     if (weekVisible) setUnseenChanges(0);
     if (tab === "history") void loadHistory();
-  }, [weekVisible, tab, loadHistory]);
+    if (tab === "pendings") void loadPendings();
+  }, [weekVisible, tab, loadHistory, loadPendings]);
 
-  async function send(text: string, images: ChatImage[]) {
+  const textOnly = settings.textOnly;
+
+  async function talk(req: ChatRequest, shownText: string, fromVoice = false) {
+    const optimisticId = `tmp-${Date.now()}`;
     const optimistic: UiMessage = {
-      id: `tmp-${Date.now()}`,
+      id: optimisticId,
       role: "user",
-      text,
+      text: shownText,
       createdAt: new Date().toISOString(),
-      hasImages: images.length > 0 || undefined,
+      hasImages: req.images.length > 0 || undefined,
+      fromVoice: fromVoice || undefined,
     };
     setMessages((m) => [...m, optimistic]);
     setSending(true);
     try {
-      const res = await api.chat({ text, images });
-      setMessages((m) => [...m, res.message]);
+      const res = await api.chat(req);
+      setMessages((m) => [
+        ...m.map((x) => (x.id === optimisticId && res.transcript !== undefined ? { ...x, text: res.transcript || "(sin voz)" } : x)),
+        res.message,
+      ]);
+      // Pulsar, hablar, soltar... y responde con voz. En modo solo texto, nunca.
+      if (fromVoice && !settingsRef.current.textOnly) {
+        void speak(res.message.text, res.message.lang ?? "es", settingsRef.current.voice);
+      }
+      void loadPendings();
       if (res.notice) showToast(res.notice);
       if (res.preview) {
         setPreview(res.preview);
@@ -169,6 +223,41 @@ function Main({ onLogout }: { onLogout(): void }) {
     } finally {
       setSending(false);
     }
+  }
+
+  const send = (text: string, images: ChatImage[]) => talk({ text, images }, text);
+  const sendVoice = (wavBase64: string) => talk({ text: "", images: [], audio: { mime: "audio/wav", data: wavBase64 } }, "…", true);
+
+  async function toggleTextOnly() {
+    const next = !textOnly;
+    if (next) stopSpeaking();
+    setSettings((s) => ({ ...s, textOnly: next }));
+    try {
+      setSettings((await api.saveSettings({ textOnly: next })).settings);
+    } catch (err) {
+      setSettings((s) => ({ ...s, textOnly: !next }));
+      showToast((err as Error).message);
+    }
+    showToast(next ? "Modo solo texto: sin voz ni sonido" : "Voz activada");
+  }
+
+  async function closePendingItem(id: string) {
+    setClosing(id);
+    try {
+      await api.closePending(id);
+      await loadPendings();
+    } catch (err) {
+      showToast((err as Error).message);
+    } finally {
+      setClosing(null);
+    }
+  }
+
+  async function deletePendingItem(id: string) {
+    const p = pendings.find((x) => x.id === id);
+    if (p && !window.confirm(`¿Borrar "${p.title}"?`)) return;
+    await api.deletePending(id).catch((err: Error) => showToast(err.message));
+    await loadPendings();
   }
 
   async function undo(id: string) {
@@ -237,6 +326,13 @@ function Main({ onLogout }: { onLogout(): void }) {
     />
   );
 
+  const today = toLocalIso(Date.now(), tz).slice(0, 10);
+  const todayCount = pendings.filter((p) => (p.kind === "reminder" || p.kind === "task") && p.dueDate !== null && p.dueDate <= today).length;
+  const chat = <Chat messages={messages} sending={sending} textOnly={textOnly} onSend={send} onVoice={sendVoice} />;
+  const pendingList = (
+    <Pendings pendings={pendings} today={today} busy={closing} onClose={closePendingItem} onDelete={deletePendingItem} />
+  );
+
   return (
     <div className={`app ${wide ? "wide" : "narrow"}`}>
       <header className="topbar">
@@ -247,14 +343,31 @@ function Main({ onLogout }: { onLogout(): void }) {
             <button role="tab" aria-selected={tab === "week"} onClick={() => setTab("week")}>
               Semana{unseenChanges > 0 && <span className="pill">{unseenChanges}</span>}
             </button>
+            <button role="tab" aria-selected={tab === "pendings"} onClick={() => setTab("pendings")}>
+              Pendientes{todayCount > 0 && <span className="pill">{todayCount}</span>}
+            </button>
             <button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>Historial</button>
           </nav>
         )}
         <div className="topbar-actions">
+          <button
+            className={`text-only ${textOnly ? "on" : ""}`}
+            onClick={toggleTextOnly}
+            aria-pressed={textOnly}
+            title={textOnly ? "Modo solo texto: sin voz ni sonido" : "Voz activada"}
+          >
+            {textOnly ? "🔇" : "🔊"}
+            {wide && <span>{textOnly ? " Solo texto" : " Voz"}</span>}
+          </button>
           {wide && (
-            <button className="icon-btn" onClick={() => setTab(tab === "history" ? "chat" : "history")} aria-label="Historial">
-              ↺
-            </button>
+            <>
+              <button className="icon-btn" onClick={() => setTab(tab === "pendings" ? "chat" : "pendings")} aria-label="Pendientes">
+                ☑
+              </button>
+              <button className="icon-btn" onClick={() => setTab(tab === "history" ? "chat" : "history")} aria-label="Historial">
+                ↺
+              </button>
+            </>
           )}
           {backend === "local" && wide && <span className="badge local small" title="Sin Google Calendar">local</span>}
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Ajustes">⚙</button>
@@ -265,7 +378,7 @@ function Main({ onLogout }: { onLogout(): void }) {
         {wide ? (
           <>
             <div className="pane pane-chat">
-              <Chat messages={messages} sending={sending} onSend={send} />
+              {chat}
             </div>
             <div className="pane pane-week">{calendar}</div>
             {tab === "history" && (
@@ -273,13 +386,17 @@ function Main({ onLogout }: { onLogout(): void }) {
                 <History entries={history} busy={undoing} onUndo={undo} />
               </aside>
             )}
+            {tab === "pendings" && <aside className="pane pane-history">{pendingList}</aside>}
           </>
         ) : (
           <>
             <div className="pane" hidden={tab !== "chat"}>
-              <Chat messages={messages} sending={sending} onSend={send} />
+              {chat}
             </div>
             <div className="pane" hidden={tab !== "week"}>{calendar}</div>
+            <div className="pane" hidden={tab !== "pendings"}>
+              {pendingList}
+            </div>
             <div className="pane" hidden={tab !== "history"}>
               <History entries={history} busy={undoing} onUndo={undo} />
             </div>
@@ -309,6 +426,20 @@ function Main({ onLogout }: { onLogout(): void }) {
             await Promise.all([loadEvents({ markChanges: true }), loadHistory()]);
             const solapes = r.conflicts.length ? ` Ojo: ${r.conflicts.length} solapes con el trabajo.` : "";
             return `Uni: ${r.created} nuevas, ${r.changed} cambiadas, ${r.removed} quitadas.${solapes}`;
+          }}
+          push={push}
+          onEnablePush={async () => {
+            const st = await enablePush();
+            setPush(st);
+            return st === "on" ? "Notificaciones activadas." : st === "denied" ? "Permiso denegado: actívalo en los ajustes del iPhone." : "No se activaron.";
+          }}
+          onDisablePush={async () => {
+            setPush(await disablePush());
+            return "Notificaciones desactivadas en este dispositivo.";
+          }}
+          onTestPush={async () => {
+            const r = await api.pushTest();
+            return r.sent ? "Enviada. Debería llegarte en unos segundos." : "No se pudo enviar (¿están activadas?).";
           }}
           onReplanGym={async () => {
             const r = await api.replanGym();
