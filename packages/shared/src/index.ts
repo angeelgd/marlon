@@ -45,6 +45,8 @@ export interface CalendarEvent {
   description?: string | null;
   kind: EventKind;
   allDay?: boolean;
+  /** Clave interna para no duplicar eventos (p. ej. "work:2026-11-02"). */
+  marlonKey?: string | null;
 }
 
 /** Evento de vista previa (aún no guardado). */

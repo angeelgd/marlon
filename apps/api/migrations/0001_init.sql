@@ -99,3 +99,11 @@ CREATE TABLE change_log (
 );
 CREATE INDEX idx_change_log_created ON change_log (created_at);
 CREATE INDEX idx_change_log_group ON change_log (group_id);
+
+-- Imágenes adjuntas pendientes de procesar. Se borran al usarlas o a las 24 h.
+CREATE TABLE pending_images (
+  id TEXT PRIMARY KEY,
+  mime TEXT NOT NULL,
+  data TEXT NOT NULL,                -- base64
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
