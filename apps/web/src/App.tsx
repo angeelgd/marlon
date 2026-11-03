@@ -179,7 +179,18 @@ function Main({ onLogout }: { onLogout(): void }) {
     const wantTab = params.get("tab");
     if (wantTab && (TABS as string[]).includes(wantTab)) setTab(wantTab as Tab);
     const say = params.get("say");
-    if (wantTab || say) clearUrlParams();
+    // Vuelta del permiso de Google Calendar.
+    const connected = params.get("connected");
+    const connectError = params.get("connect_error");
+    if (connected === "google") {
+      const moved = Number(params.get("moved") ?? 0);
+      showToast(moved > 0 ? `Google Calendar conectado. ${moved} eventos subidos a Google.` : "Google Calendar conectado.");
+    }
+    if (connectError) {
+      setShowSettings(true);
+      showToast(connectError);
+    }
+    if (wantTab || say || connected || connectError) clearUrlParams();
     if (say) void talk({ text: say.slice(0, 200), images: [] }, say);
     api.settings().then((r) => {
       setSettings(r.settings);

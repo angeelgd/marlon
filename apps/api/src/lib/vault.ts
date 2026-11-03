@@ -59,3 +59,29 @@ export async function getSecure(env: Env, key: string): Promise<string | null> {
 export async function deleteSecure(env: Env, key: string): Promise<void> {
   await env.DB.prepare(`DELETE FROM secure_values WHERE key = ?`).bind(key).run();
 }
+
+/** Varios valores de una vez (una sola consulta). Los que no se pueden leer se omiten. */
+export async function getSecureMany(env: Env, keys: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!keys.length) return out;
+  const { results } = await env.DB.prepare(
+    `SELECT key, iv, ciphertext FROM secure_values WHERE key IN (${keys.map(() => "?").join(",")})`,
+  )
+    .bind(...keys)
+    .all<{ key: string; iv: string; ciphertext: string }>();
+  if (!results.length) return out;
+  const k = await vaultKey(env);
+  for (const row of results) {
+    try {
+      const plain = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: unb64(row.iv), additionalData: enc.encode(row.key) },
+        k,
+        unb64(row.ciphertext),
+      );
+      out.set(row.key, dec.decode(plain));
+    } catch {
+      /* SESSION_SECRET cambió: hay que volver a guardarlo */
+    }
+  }
+  return out;
+}

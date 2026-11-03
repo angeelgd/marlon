@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { getSettings } from "../db/settings";
 import type { Env } from "../env";
+import { withStoredCredentials } from "../integrations/credentials";
 import { dispatchNotifications, nextPendingAt } from "./scheduler";
 
 /**
@@ -17,7 +18,8 @@ export class NotificationScheduler extends DurableObject<Env> {
 
   override async alarm(): Promise<void> {
     const settings = await getSettings(this.env.DB);
-    await dispatchNotifications({ env: this.env, db: this.env.DB, settings, now: Date.now() });
+    const env = await withStoredCredentials(this.env);
+    await dispatchNotifications({ env, db: env.DB, settings, now: Date.now() });
     await this.reschedule();
   }
 
