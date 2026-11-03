@@ -8,7 +8,7 @@ declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: (string | { url:
 // La app (no la API) se guarda en caché para abrir al instante. La API nunca se cachea.
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
-registerRoute(new NavigationRoute(createHandlerBoundToURL("index.html"), { denylist: [/^\/api\//] }));
+registerRoute(new NavigationRoute(createHandlerBoundToURL("index.html"), { denylist: [/^\/api\//, /^\/(privacidad|terminos)\.html$/] }));
 
 self.skipWaiting();
 clientsClaim();

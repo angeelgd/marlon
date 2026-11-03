@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacidad · Marlon</title>
+<style>
+  :root { --bg: #f5f4f0; --text: #171614; --muted: #6b675f; --line: rgba(24,22,18,.1); }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0e0e0d; --text: #eeebe4; --muted: #a39e94; --line: rgba(255,252,245,.1); } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 56px 20px 80px; }
+  h1 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 400; font-size: 40px; line-height: 1.1; margin: 0 0 8px; }
+  h2 { font-size: 17px; margin: 32px 0 8px; }
+  p, li { color: var(--text); }
+  .muted { color: var(--muted); font-size: 14px; }
+  ul { padding-left: 20px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacidad</h1>
+  <p class="muted">Marlon · última actualización: 3 de noviembre de 2026</p>
+
+  <p>Marlon es un asistente personal de uso privado, desarrollado y usado por Ángel González de la Calle. No se ofrece a terceros.</p>
+
+  <h2>Qué datos trata</h2>
+  <ul>
+    <li>Calendario, horarios de trabajo y de la universidad, pendientes y recordatorios.</li>
+    <li>Datos económicos: gastos, saldos y movimientos de las cuentas bancarias que el titular conecta, en modo solo lectura.</li>
+    <li>Mensajes del chat, notas de voz y preferencias guardadas en Ajustes.</li>
+  </ul>
+
+  <h2>Dónde se guardan</h2>
+  <p>En una base de datos de Cloudflare (D1) asociada a esta aplicación. Las claves y permisos de acceso (Google, banco) se guardan cifrados con AES-GCM.</p>
+
+  <h2>Con quién se comparten</h2>
+  <ul>
+    <li><strong>Enable Banking</strong>, para leer saldos y movimientos con el consentimiento del titular (PSD2). Marlon no puede hacer pagos ni transferencias.</li>
+    <li><strong>Google</strong>, para Google Calendar y para el modelo de IA Gemini en su modalidad de pago, que no usa los datos para entrenar modelos.</li>
+    <li><strong>Cloudflare</strong>, como proveedor de alojamiento.</li>
+  </ul>
+  <p>Los datos no se venden ni se usan con fines publicitarios.</p>
+
+  <h2>Conservación y borrado</h2>
+  <p>Los datos se conservan mientras se usa la aplicación. El permiso bancario caduca a los 90 a 180 días y se puede revocar en cualquier momento desde Ajustes o desde el propio banco.</p>
+
+  <h2>Contacto</h2>
+  <p>gonzalezdelacalleangel@gmail.com</p>
+
+  <hr />
+  <p class="muted"><a href="/terminos.html">Condiciones de uso</a></p>
+</main>
+</body>
+</html>
