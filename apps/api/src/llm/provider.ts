@@ -13,6 +13,11 @@ export interface ToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
+  /**
+   * Datos propios del proveedor que hay que devolver tal cual en el siguiente turno.
+   * Gemini 3 guarda aquí la "thought_signature" y rechaza la llamada si falta.
+   */
+  extra_content?: { google?: { thought_signature?: string } } & Record<string, unknown>;
 }
 
 export type LlmMessage =

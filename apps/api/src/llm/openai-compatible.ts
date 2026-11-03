@@ -1,4 +1,4 @@
-import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse, type ToolCall } from "./provider";
+import { LlmError, type LlmMessage, type LlmProvider, type LlmRequest, type LlmResponse, type ToolCall } from "./provider";
 
 export interface OpenAiCompatibleConfig {
   name: string;
@@ -25,7 +25,12 @@ export interface OpenAiCompatibleConfig {
 interface ApiChoice {
   message?: {
     content?: string | null;
-    tool_calls?: { id?: string; type?: string; function?: { name?: string; arguments?: string | object } }[];
+    tool_calls?: {
+      id?: string;
+      type?: string;
+      function?: { name?: string; arguments?: string | object };
+      extra_content?: ToolCall["extra_content"];
+    }[];
   };
 }
 
@@ -57,7 +62,9 @@ export class OpenAiCompatibleProvider implements LlmProvider {
   }
 
   private async chatWith(model: string, req: LlmRequest, hasFallback: boolean): Promise<LlmResponse> {
-    const body: Record<string, unknown> = { model, messages: req.messages };
+    const isGemini = this.cfg.baseUrl.includes("generativelanguage.googleapis.com");
+    const messages = isGemini ? withThoughtSignatures(req.messages) : req.messages;
+    const body: Record<string, unknown> = { model, messages };
     if (this.cfg.sendTemperature && req.temperature !== undefined) body.temperature = req.temperature;
     if (req.tools?.length) body.tools = req.tools;
     if (req.json) body.response_format = { type: "json_object" };
@@ -99,6 +106,32 @@ export class OpenAiCompatibleProvider implements LlmProvider {
   }
 }
 
+/**
+ * Valor que Google documenta para llamadas a herramientas sin firma (historial antiguo
+ * o de otro modelo): desactiva la comprobación para esa llamada.
+ */
+export const SKIP_SIGNATURE = "skip_thought_signature_validator";
+
+/**
+ * Gemini 3 exige que cada paso con llamadas a herramientas lleve la firma que devolvió
+ * (en la primera llamada del paso). Las que vienen del propio modelo ya la traen; a las
+ * antiguas, guardadas antes de conservarla, se les pone el valor de omisión.
+ */
+export function withThoughtSignatures(messages: LlmMessage[]): LlmMessage[] {
+  return messages.map((m) => {
+    if (m.role !== "assistant" || !m.tool_calls?.length) return m;
+    if (m.tool_calls.some((t) => t.extra_content?.google?.thought_signature)) return m;
+    const [first, ...rest] = m.tool_calls;
+    return {
+      ...m,
+      tool_calls: [
+        { ...first!, extra_content: { ...first!.extra_content, google: { ...first!.extra_content?.google, thought_signature: SKIP_SIGNATURE } } },
+        ...rest,
+      ],
+    };
+  });
+}
+
 function friendlyMessage(status: number, text: string): string {
   if (status === 429) return "Se ha alcanzado el límite de peticiones del modelo. Prueba de nuevo en un rato.";
   if (status === 503 || status === 502 || status === 504) {
@@ -122,6 +155,7 @@ export function parseResponse(json: unknown): LlmResponse {
         arguments:
           typeof t.function!.arguments === "string" ? t.function!.arguments : JSON.stringify(t.function!.arguments ?? {}),
       },
+      ...(t.extra_content ? { extra_content: t.extra_content } : {}),
     }));
   return {
     content: msg.content ?? null,
