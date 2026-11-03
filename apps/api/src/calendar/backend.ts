@@ -48,7 +48,7 @@ export class SyncTokenExpiredError extends Error {}
 export class GoogleAuthError extends Error {
   constructor() {
     super(
-      "Google ha rechazado el acceso al calendario (refresh token caducado o revocado). Vuelve a ejecutar `pnpm google:auth` y actualiza el secreto GOOGLE_REFRESH_TOKEN.",
+      "Google ha rechazado el acceso al calendario (el permiso ha caducado o se ha revocado). Vuelve a conectarlo en Ajustes > Conexiones.",
     );
     this.name = "GoogleAuthError";
   }
@@ -110,7 +110,7 @@ interface GEvent {
   extendedProperties?: { private?: Record<string, string> };
 }
 
-let tokenCache: { token: string; expiresAt: number } | null = null;
+let tokenCache: { token: string; expiresAt: number; refresh: string } | null = null;
 
 export class GoogleBackend implements CalendarBackend {
   readonly kind = "google" as const;
@@ -123,7 +123,8 @@ export class GoogleBackend implements CalendarBackend {
   ) {}
 
   private async accessToken(force = false): Promise<string> {
-    if (!force && tokenCache && tokenCache.expiresAt > Date.now() + 60_000) return tokenCache.token;
+    const refresh = this.env.GOOGLE_REFRESH_TOKEN ?? "";
+    if (!force && tokenCache && tokenCache.refresh === refresh && tokenCache.expiresAt > Date.now() + 60_000) return tokenCache.token;
     const res = await this.fetchImpl("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -139,7 +140,7 @@ export class GoogleBackend implements CalendarBackend {
       if (data.error === "invalid_grant" || res.status === 400 || res.status === 401) throw new GoogleAuthError();
       throw new Error(`Error al obtener el token de Google (${res.status}).`);
     }
-    tokenCache = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
+    tokenCache = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000, refresh };
     return data.access_token;
   }
 

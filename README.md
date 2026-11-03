@@ -309,6 +309,15 @@ Para usar otro proveedor compatible con OpenAI, cambia `LLM_BASE_URL` y `LLM_MOD
 
 ### 3. Google Calendar
 
+**Desde la app (recomendado, sin terminal):** en *Ajustes > Conexiones > Google Calendar*.
+1. Sigue los pasos de «Cómo conseguirlo»: crea un cliente OAuth de tipo **Aplicación web** y añade como URI de redireccionamiento la que muestra la app (`https://<tu-worker>/api/google/callback`).
+2. Pega el ID y el secreto del cliente y pulsa **Conectar con Google**.
+3. Al volver, Marlon sube a Google los eventos que había creado en modo local y empieza a sincronizar cada 5 minutos.
+
+El cliente y el refresh token se guardan cifrados en D1 (AES-GCM, clave derivada de `SESSION_SECRET`). Si también existen como secretos de Cloudflare, mandan los secretos.
+
+**Alternativa con secretos:**
+
 1. En Google Cloud Console, crea un proyecto y **activa la Google Calendar API**.
 2. Configura la **pantalla de consentimiento OAuth**:
    - Tipo *External*.
@@ -360,7 +369,7 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 ### 5. Vídeos de batch cooking (opcional)
 
-1. En Google Cloud Console, activa la **YouTube Data API v3** y crea una clave restringida a esa API. Súbela como secreto:
+1. En Google Cloud Console, activa la **YouTube Data API v3** y crea una clave restringida a esa API. Pégala en *Ajustes > Conexiones > YouTube* (Marlon comprueba que funciona) o súbela como secreto:
 
    ```bash
    pnpm --filter @marlon/api exec wrangler secret put YOUTUBE_API_KEY

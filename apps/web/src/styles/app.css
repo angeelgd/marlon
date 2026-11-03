@@ -1090,3 +1090,18 @@ li.undone { opacity: 0.5; }
 @media (prefers-color-scheme: dark) {
   .bubble.user { background: color-mix(in srgb, var(--gold) 20%, var(--surface-2)); color: var(--text); }
 }
+
+/* Conexiones */
+.s-block > .actions-row:not(:first-child), .s-block > .s-stack, .s-block > .steps, .s-block > .s-input-row { margin-top: 12px; }
+.s-stack { display: flex; flex-direction: column; gap: 8px; }
+.list-lead.ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
+.ok-tick { color: var(--success); margin-right: 4px; vertical-align: -1px; }
+.steps { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); padding: 0 14px; }
+.steps summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; height: 42px; font-size: 14px; font-weight: 550; color: var(--text-2); }
+.steps summary::-webkit-details-marker { display: none; }
+.steps summary svg { transition: transform 0.2s var(--ease); }
+.steps[open] summary svg { transform: rotate(180deg); }
+.steps ol { margin: 0 0 12px; padding-left: 20px; font-size: 13.5px; color: var(--text-2); display: flex; flex-direction: column; gap: 6px; }
+.steps > p { margin: 10px 0 14px; }
+.copy-field { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; margin-bottom: 4px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line-strong); }
+.copy-field code { flex: 1; min-width: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; overflow-wrap: anywhere; }

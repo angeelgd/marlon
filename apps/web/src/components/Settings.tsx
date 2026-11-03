@@ -11,6 +11,7 @@ import {
   Link2,
   MapPin,
   Moon,
+  Plug,
   Sparkles,
   Wrench,
   type LucideIcon,
@@ -18,7 +19,9 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type UniversityLink } from "../lib/api";
 import type { PushState } from "../lib/push";
+import { Connections } from "./Connections";
 import { MemoryEditor } from "./MemoryEditor";
+import { Group, Label } from "./SettingsParts";
 
 interface Props {
   settings: S;
@@ -46,6 +49,7 @@ const PUSH_TEXT: Record<PushState, string> = {
 };
 
 const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: "s-conexiones", label: "Conexiones", icon: Plug },
   { id: "s-avisos", label: "Avisos y voz", icon: Bell },
   { id: "s-trabajo", label: "Trabajo", icon: Briefcase },
   { id: "s-uni", label: "Universidad", icon: GraduationCap },
@@ -59,25 +63,6 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "s-memoria", label: "Memoria", icon: Brain },
   { id: "s-acciones", label: "Mantenimiento", icon: Wrench },
 ];
-
-function Group({ id, title, foot, children }: { id: string; title: string; foot?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="s-group" id={id}>
-      <h3 className="eyebrow">{title}</h3>
-      <div className="s-list">{children}</div>
-      {foot && <p className="s-foot">{foot}</p>}
-    </section>
-  );
-}
-
-function Label({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <span className="s-label">
-      {title}
-      {hint && <small>{hint}</small>}
-    </span>
-  );
-}
 
 export function Settings(props: Props) {
   const { settings, calendarBackend, onSave, onClose, onLogout, push } = props;
@@ -208,6 +193,8 @@ export function Settings(props: Props) {
           <div className="settings-scroll" ref={scrollRef}>
             <div className="settings-content">
               {msg && <p className={`s-msg ${msg.err ? "err" : ""}`} role="status">{msg.text}</p>}
+
+              <Connections />
 
               <Group id="s-avisos" title="Avisos y voz" foot={`Notificaciones: ${PUSH_TEXT[push]}`}>
                 {toggle({ k: "textOnly", title: "Solo texto", hint: "Sin voz ni sonido, también en los avisos." })}

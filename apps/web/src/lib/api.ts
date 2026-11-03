@@ -72,6 +72,11 @@ export const api = {
 
   syncUniversity: () =>
     post<{ created: number; changed: number; removed: number; unchanged: number; conflicts: unknown[] }>("/university/sync"),
+  connections: () => request<Connections>("/connections"),
+  saveConnection: (name: "google-client" | "youtube" | "maps", body: { clientId?: string; clientSecret?: string; key?: string }) =>
+    request<{ ok: true }>(`/connections/${name}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteConnection: (name: "google" | "google-client" | "youtube" | "maps") =>
+    request<{ ok: true }>(`/connections/${name}`, { method: "DELETE", headers: { "content-type": "application/json" } }),
   universityLink: () => request<UniversityLink>("/university/link"),
   saveUniversityLink: (url: string) =>
     request<UniversityLink & { sync: { created: number; changed: number; removed: number; unchanged: number; conflicts: unknown[] } }>(
@@ -135,6 +140,13 @@ export const api = {
   saveSettings: (patch: Partial<Settings>) =>
     request<{ settings: Settings }>("/settings", { method: "PUT", body: JSON.stringify(patch) }),
 };
+
+export type CredentialSource = "secret" | "app" | null;
+export interface Connections {
+  google: { clientSource: CredentialSource; connected: boolean; tokenSource: CredentialSource; redirectUri: string };
+  youtube: { source: CredentialSource };
+  maps: { source: CredentialSource };
+}
 
 export interface UniversityLink {
   configured: boolean;

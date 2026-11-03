@@ -67,7 +67,7 @@ export const findCookingVideos = defineTool({
   schema: z.object({ query: z.string().max(100).optional(), count: z.number().int().min(1).max(3).default(2) }),
   async run(a, ctx) {
     if (!ctx.env.YOUTUBE_API_KEY) {
-      throw new ToolError("No hay clave de YouTube configurada.", "Explica que hace falta el secreto YOUTUBE_API_KEY, o que puede pasarte un enlace.");
+      throw new ToolError("No hay clave de YouTube configurada.", "Explica que puede añadir la clave de YouTube en Ajustes > Conexiones, o pasarte un enlace de un vídeo.");
     }
     const all = await searchCookingVideos({ db: ctx.db, apiKey: ctx.env.YOUTUBE_API_KEY, query: a.query, now: ctx.now, fetchImpl: ctx.fetchImpl });
     const fresh = await pickFresh(ctx.db, all, a.count);

@@ -27,6 +27,9 @@ import { dispatchNotifications, enqueue, vapidFromEnv } from "./push/scheduler";
 import { toLocalIso } from "./lib/time";
 import { mondayOfDate, replanGymWeek } from "./planning/apply";
 import { fetchIcal, syncUniversity } from "./university/sync";
+import { pushLocalEventsToGoogle } from "./calendar/migrate";
+import { credentialSources, deleteCredential, saveCredential, withStoredCredentials, type StoredCredential } from "./integrations/credentials";
+import { CALLBACK_PATH, finishGoogleAuth, redirectUri, startGoogleAuth } from "./integrations/google-oauth";
 import { deleteUniversityIcalUrl, maskedHost, normalizeIcalUrl, saveUniversityIcalUrl, universityIcalUrl } from "./university/source";
 
 export const app = new Hono<{ Bindings: Env }>();
@@ -42,6 +45,12 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
+// Credenciales guardadas desde Ajustes (cifradas): se añaden al entorno de la petición.
+app.use("/api/*", async (c, next) => {
+  if (c.req.path !== "/api/health") c.env = await withStoredCredentials(c.env);
+  return next();
+});
+
 app.onError((err, c) => {
   console.error(err);
   if (err instanceof GoogleAuthError) return c.json({ error: err.message, code: "google_auth" }, 502);
@@ -50,6 +59,21 @@ app.onError((err, c) => {
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 app.route("/api/auth", authRoutes);
+
+/** Vuelta del permiso de Google (sin cookie: la protege el state de un solo uso). */
+app.get(CALLBACK_PATH, async (c) => {
+  const origin = new URL(c.req.url).origin;
+  try {
+    await finishGoogleAuth(c.env, origin, new URL(c.req.url).searchParams);
+    const env = await withStoredCredentials(c.env);
+    const { calendar } = await calendarFor(env);
+    const moved = await pushLocalEventsToGoogle(env.DB, calendar);
+    await syncCalendar(env.DB, calendar).catch((err) => console.error("primera sincronización falló", err));
+    return c.redirect(`/?connected=google&moved=${moved.moved}`, 302);
+  } catch (err) {
+    return c.redirect(`/?connect_error=${encodeURIComponent((err as Error).message)}`, 302);
+  }
+});
 
 const api = new Hono<{ Bindings: Env }>();
 api.use("*", requireAuth);
@@ -137,6 +161,77 @@ api.post("/university/sync", async (c) => {
   } catch (err) {
     if (err instanceof GoogleAuthError) throw err;
     return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+/** Estado de las conexiones externas. Nunca devuelve claves. */
+api.get("/connections", async (c) => {
+  const origin = new URL(c.req.url).origin;
+  const src = await credentialSources(c.env);
+  const { calendar } = await calendarFor(c.env);
+  return c.json({
+    google: {
+      clientSource: src.GOOGLE_CLIENT_ID && src.GOOGLE_CLIENT_SECRET ? (src.GOOGLE_CLIENT_ID === "secret" ? "secret" : "app") : null,
+      connected: calendar.backend.kind === "google",
+      tokenSource: src.GOOGLE_REFRESH_TOKEN,
+      redirectUri: redirectUri(origin),
+    },
+    youtube: { source: src.YOUTUBE_API_KEY },
+    maps: { source: src.GOOGLE_MAPS_API_KEY },
+  });
+});
+
+const ConnectionBody = z.object({
+  clientId: z.string().trim().min(10).max(300).optional(),
+  clientSecret: z.string().trim().min(6).max(300).optional(),
+  key: z.string().trim().min(10).max(300).optional(),
+});
+
+api.put("/connections/:name", async (c) => {
+  const name = c.req.param("name");
+  const parsed = ConnectionBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Datos no válidos." }, 400);
+  const b = parsed.data;
+  if (name === "google-client") {
+    if (!b.clientId || !b.clientSecret) return c.json({ error: "Pega el ID y el secreto del cliente." }, 400);
+    if (!b.clientId.endsWith(".apps.googleusercontent.com")) {
+      return c.json({ error: "El ID del cliente termina en .apps.googleusercontent.com. Revisa que lo hayas copiado entero." }, 400);
+    }
+    await saveCredential(c.env, "GOOGLE_CLIENT_ID", b.clientId);
+    await saveCredential(c.env, "GOOGLE_CLIENT_SECRET", b.clientSecret);
+    return c.json({ ok: true });
+  }
+  if (name === "youtube" || name === "maps") {
+    if (!b.key) return c.json({ error: "Pega la clave de API." }, 400);
+    if (name === "youtube") {
+      const check = await testYoutubeKey(b.key);
+      if (check) return c.json({ error: check }, 400);
+    }
+    await saveCredential(c.env, name === "youtube" ? "YOUTUBE_API_KEY" : "GOOGLE_MAPS_API_KEY", b.key);
+    return c.json({ ok: true });
+  }
+  return c.json({ error: "Conexión desconocida." }, 404);
+});
+
+api.delete("/connections/:name", async (c) => {
+  const name = c.req.param("name");
+  const keys: Record<string, StoredCredential[]> = {
+    google: ["GOOGLE_REFRESH_TOKEN"],
+    "google-client": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"],
+    youtube: ["YOUTUBE_API_KEY"],
+    maps: ["GOOGLE_MAPS_API_KEY"],
+  };
+  if (!keys[name]) return c.json({ error: "Conexión desconocida." }, 404);
+  for (const k of keys[name]) await deleteCredential(c.env, k);
+  return c.json({ ok: true });
+});
+
+/** Empieza el permiso de Google Calendar: la app navega aquí y se redirige a Google. */
+api.get("/google/connect", async (c) => {
+  try {
+    return c.redirect(await startGoogleAuth(c.env, new URL(c.req.url).origin), 302);
+  } catch (err) {
+    return c.redirect(`/?connect_error=${encodeURIComponent((err as Error).message)}`, 302);
   }
 });
 
@@ -451,9 +546,27 @@ app.all("/api/*", (c) => c.json({ error: "No encontrado." }, 404));
 
 export { NotificationScheduler } from "./push/alarm";
 
+/** Devuelve un texto de error si la clave de YouTube no funciona. */
+async function testYoutubeKey(key: string): Promise<string | null> {
+  const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=id&id=jNQXAC9IVRw&key=${encodeURIComponent(key)}`).catch(() => null);
+  if (!res) return "No se pudo comprobar la clave con YouTube. Inténtalo de nuevo.";
+  if (res.ok) return null;
+  const data = (await res.json().catch(() => ({}))) as { error?: { message?: string; errors?: { reason?: string }[] } };
+  const reason = data.error?.errors?.[0]?.reason;
+  if (reason === "accessNotConfigured" || /has not been used|disabled/i.test(data.error?.message ?? "")) {
+    return "La clave es válida, pero falta activar YouTube Data API v3 en ese proyecto de Google Cloud.";
+  }
+  if (reason === "keyInvalid" || res.status === 400) return "Google dice que la clave no es válida.";
+  return `YouTube respondió ${res.status}: ${data.error?.message ?? "sin detalle"}.`;
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(runCron(event.cron, env).catch((err) => console.error("cron falló", err)));
+    ctx.waitUntil(
+      withStoredCredentials(env)
+        .then((e) => runCron(event.cron, e))
+        .catch((err) => console.error("cron falló", err)),
+    );
   },
 } satisfies ExportedHandler<Env>;
