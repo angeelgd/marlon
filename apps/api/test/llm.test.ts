@@ -58,13 +58,13 @@ describe("modelos de reserva", () => {
   const noSleep = async () => {};
   it("si el principal está saturado (503), pasa al de reserva", async () => {
     const busy = () => new Response('{"error":{"code":503,"status":"UNAVAILABLE"}}', { status: 503 });
-    const { fn, calls } = fakeFetch([busy(), busy(), ok({ choices: [{ message: { content: "hola" } }] })]);
+    const { fn, calls } = fakeFetch([busy(), ok({ choices: [{ message: { content: "hola" } }] })]);
     const p = new OpenAiCompatibleProvider({
       name: "t", baseUrl: "https://a", apiKey: "k", model: "m", fallbackModels: ["lite"], tier: "free",
       fetchImpl: fn, maxRetries: 1, sleepImpl: noSleep,
     });
     expect((await p.chat({ messages: [] })).content).toBe("hola");
-    expect(calls.map((c) => (c.body as { model: string }).model)).toEqual(["m", "m", "lite"]);
+    expect(calls.map((c) => (c.body as { model: string }).model)).toEqual(["m", "lite"]);
   });
 
   it("da un mensaje claro si todos están saturados y no cambia de modelo ante un 400", async () => {

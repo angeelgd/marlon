@@ -44,9 +44,9 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     const primary = req.vision && this.cfg.visionModel ? this.cfg.visionModel : this.cfg.model;
     const models = [primary, ...(this.cfg.fallbackModels ?? [])].filter((m, i, all) => m && all.indexOf(m) === i);
     let lastError: LlmError | null = null;
-    for (const model of models) {
+    for (const [i, model] of models.entries()) {
       try {
-        return await this.chatWith(model, req);
+        return await this.chatWith(model, req, i < models.length - 1);
       } catch (err) {
         // Solo se cambia de modelo si el fallo es de saturación o cuota, no si la petición es mala.
         if (!(err instanceof LlmError) || !err.retryable) throw err;
@@ -56,7 +56,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     throw lastError ?? new LlmError("No hay ningún modelo configurado.", null, false);
   }
 
-  private async chatWith(model: string, req: LlmRequest): Promise<LlmResponse> {
+  private async chatWith(model: string, req: LlmRequest, hasFallback: boolean): Promise<LlmResponse> {
     const body: Record<string, unknown> = { model, messages: req.messages };
     if (this.cfg.sendTemperature && req.temperature !== undefined) body.temperature = req.temperature;
     if (req.tools?.length) body.tools = req.tools;
@@ -86,7 +86,9 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       if (res.ok) return parseResponse(await res.json());
 
       const retryable = res.status === 429 || res.status >= 500;
-      if (retryable && attempt < maxRetries) {
+      // Saturado: con reserva disponible no se espera, se cambia de modelo directamente.
+      const skipToFallback = res.status === 503 && hasFallback;
+      if (retryable && !skipToFallback && attempt < maxRetries) {
         const retryAfter = Number(res.headers.get("retry-after"));
         await wait(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 5) * 1000 : 1000 * 2 ** attempt);
         continue;
