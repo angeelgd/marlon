@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Env } from "../env";
 import type { LlmProvider } from "../llm/provider";
+import { DEFAULT_MODEL } from "../llm/router";
 import type { VideoInfo } from "./youtube";
 
 /**
@@ -71,13 +72,13 @@ export function geminiKey(env: Env): string | null {
 export async function recipeFromVideo(env: Env, url: string, fetchImpl: typeof fetch = fetch): Promise<Recipe> {
   const key = geminiKey(env);
   if (!key) throw new Error("No hay clave de Gemini para entender vídeos.");
-  const model = env.LLM_VIDEO_MODEL || env.LLM_MODEL || "gemini-2.5-flash";
+  const model = env.LLM_VIDEO_MODEL || env.LLM_MODEL || DEFAULT_MODEL;
   const res = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       contents: [{ parts: [{ file_data: { file_uri: url } }, { text: RECIPE_PROMPT }] }],
-      generationConfig: { response_mime_type: "application/json", temperature: 0.2 },
+      generationConfig: { response_mime_type: "application/json" },
     }),
   });
   if (!res.ok) throw new Error(`Gemini respondió ${res.status} al ver el vídeo.`);

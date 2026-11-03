@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OpenAiCompatibleProvider } from "../src/llm/openai-compatible";
 import { ConsentRequiredError, LlmError } from "../src/llm/provider";
 import { getLlm } from "../src/llm/router";
@@ -51,6 +51,30 @@ describe("OpenAiCompatibleProvider", () => {
     const f2 = fakeFetch([new Response("x", { status: 429 }), new Response("x", { status: 429 })]);
     const p2 = new OpenAiCompatibleProvider({ name: "t", baseUrl: "https://a", apiKey: "k", model: "m", tier: "free", fetchImpl: f2.fn, maxRetries: 1 });
     await expect(p2.chat({ messages: [] })).rejects.toBeInstanceOf(LlmError);
+  });
+});
+
+describe("temperatura y modelo por defecto", () => {
+  it("no envía temperature salvo que se active (Gemini 3.x la ha dejado obsoleta)", async () => {
+    const mk = (sendTemperature: boolean) => {
+      const f = fakeFetch([ok({ choices: [{ message: { content: "x" } }] })]);
+      return { f, p: new OpenAiCompatibleProvider({ name: "t", baseUrl: "https://a", apiKey: "k", model: "m", tier: "free", fetchImpl: f.fn, sendTemperature }) };
+    };
+    const off = mk(false);
+    await off.p.chat({ messages: [], temperature: 0 });
+    expect(off.f.calls[0]!.body).not.toHaveProperty("temperature");
+    const on = mk(true);
+    await on.p.chat({ messages: [], temperature: 0 });
+    expect(on.f.calls[0]!.body).toMatchObject({ temperature: 0 });
+  });
+
+  it("por defecto usa el alias que no caduca", async () => {
+    const f = fakeFetch([ok({ choices: [{ message: { content: "x" } }] })]);
+    const env = testEnv({ LLM_PROVIDER: "openai-compatible", LLM_API_KEY: "k" });
+    vi.stubGlobal("fetch", f.fn);
+    await getLlm(env).chat({ messages: [] });
+    vi.unstubAllGlobals();
+    expect((f.calls[0]!.body as { model: string }).model).toBe("gemini-flash-latest");
   });
 });
 
