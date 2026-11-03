@@ -56,9 +56,12 @@ export function Login({ hasCredentials, onDone }: Props) {
         >
           <p className="muted">Primera vez: escribe el código de configuración y crea tu passkey.</p>
           <input
-            type="password"
+            type="text"
             placeholder="Código de configuración"
             value={setupToken}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             onChange={(e) => setSetupToken(e.target.value)}
             autoComplete="one-time-code"
             required

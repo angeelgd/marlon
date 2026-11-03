@@ -55,6 +55,14 @@ async function credentialCount(db: D1Database): Promise<number> {
   return r?.n ?? 0;
 }
 
+/**
+ * Al copiar y pegar el código (en Cloudflare o en el iPhone) es fácil que se cuelen
+ * espacios, saltos de línea o caracteres "tipográficos" del teclado. Se ignoran.
+ */
+export function normalizeToken(v: string | undefined | null): string {
+  return (v ?? "").normalize("NFKC").replace(/[\s\u200B-\u200D\uFEFF]/g, "");
+}
+
 export const authRoutes = new Hono<{ Bindings: Env }>();
 
 authRoutes.get("/status", async (c) => {
@@ -71,7 +79,11 @@ authRoutes.get("/status", async (c) => {
  */
 authRoutes.post("/register/options", async (c) => {
   const body = await c.req.json<{ setupToken?: string }>().catch(() => ({}) as { setupToken?: string });
-  if (!c.env.SETUP_TOKEN || !body.setupToken || !safeEqual(body.setupToken, c.env.SETUP_TOKEN)) {
+  const expected = normalizeToken(c.env.SETUP_TOKEN);
+  if (!expected) {
+    return c.json({ error: "El servidor no tiene el secreto SETUP_TOKEN. Añádelo en Cloudflare (Settings > Variables and Secrets)." }, 503);
+  }
+  if (!safeEqual(normalizeToken(body.setupToken), expected)) {
     return c.json({ error: "Código de configuración incorrecto." }, 403);
   }
   if ((await credentialCount(c.env.DB)) > 0 && !(await readSession(c))) {

@@ -49,6 +49,21 @@ describe("API", () => {
     expect(good.headers.get("set-cookie")).toContain("marlon_challenge=");
   });
 
+  it("el código ignora espacios y saltos de línea al copiar y pegar", async () => {
+    const env = testEnv({ SETUP_TOKEN: "marlon2026angel\n" });
+    const ok = await app.request("https://marlon.example/api/auth/register/options", json({ setupToken: " marlon2026angel " }), env);
+    expect(ok.status).toBe(200);
+    const bad = await app.request("https://marlon.example/api/auth/register/options", json({ setupToken: "Marlon2026angel" }), env);
+    expect(bad.status).toBe(403);
+  });
+
+  it("si falta el secreto SETUP_TOKEN lo dice claramente", async () => {
+    const env = testEnv({ SETUP_TOKEN: undefined });
+    const res = await app.request("https://marlon.example/api/auth/register/options", json({ setupToken: "lo-que-sea" }), env);
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toContain("SETUP_TOKEN");
+  });
+
   it("estado de autenticación", async () => {
     const res = await app.request("https://marlon.example/api/auth/status", {}, testEnv());
     expect(await res.json()).toEqual({ authenticated: false, hasCredentials: false });
