@@ -1,6 +1,7 @@
 import type { Settings as S } from "@marlon/shared";
 import { useState } from "react";
 import type { PushState } from "../lib/push";
+import { MemoryEditor } from "./MemoryEditor";
 
 interface Props {
   settings: S;
@@ -214,6 +215,23 @@ export function Settings(props: Props) {
               </>
             )}
           </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Estudio y lectura</legend>
+          <div className="row2">
+            <label>Bloque de estudio (min)<input {...num("studyBlockMin", { min: 15, max: 180 })} /></label>
+            <label>Descanso (proporción)<input {...num("studyBreakRatio", { min: 0.1, max: 0.5, step: 0.05 })} /></label>
+          </div>
+          <label className="row">
+            <input type="checkbox" {...check("readingPrompts")} />
+            Preguntarme por el libro al acabar un trayecto
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Lo que Marlon sabe de ti</legend>
+          <MemoryEditor />
         </fieldset>
 
         <fieldset>

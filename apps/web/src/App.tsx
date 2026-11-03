@@ -8,6 +8,7 @@ import type {
   SchedulePreview,
   Settings as S,
   UiMessage,
+  WellbeingSession,
 } from "@marlon/shared";
 import { addDays, DEFAULT_SETTINGS, toLocalIso } from "@marlon/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -17,6 +18,9 @@ import { Pendings } from "./components/Pendings";
 import { Food } from "./components/Food";
 import { Money } from "./components/Money";
 import { More, type MoreSection } from "./components/More";
+import { SessionPlayer } from "./components/SessionPlayer";
+import { Wellbeing } from "./components/Wellbeing";
+import { unlockAudio } from "./lib/sound";
 import { Login } from "./components/Login";
 import { Settings } from "./components/Settings";
 import { WeekCalendar } from "./components/WeekCalendar";
@@ -84,6 +88,7 @@ function Main({ onLogout }: { onLogout(): void }) {
   const [pendings, setPendings] = useState<Pending[]>([]);
   const [closing, setClosing] = useState<string | null>(null);
   const [push, setPush] = useState<PushState>("off");
+  const [session, setSession] = useState<WellbeingSession | null>(null);
 
   const [history, setHistory] = useState<ChangeLogEntry[]>([]);
   const [undoing, setUndoing] = useState<string | null>(null);
@@ -140,9 +145,21 @@ function Main({ onLogout }: { onLogout(): void }) {
     }
   }, []);
 
+  const loadSession = useCallback(() => {
+    api.session().then((r) => setSession(r.session), () => {});
+  }, []);
+
+  // iOS solo deja sonar audio tras un gesto: se desbloquea con el primer toque.
+  useEffect(() => {
+    const fn = () => unlockAudio();
+    document.addEventListener("pointerdown", fn, { once: true });
+    return () => document.removeEventListener("pointerdown", fn);
+  }, []);
+
   // Carga inicial.
   useEffect(() => {
     void loadPendings();
+    loadSession();
     void pushState().then(setPush);
     // Al tocar una notificación se abre con ?tab=... o ?say=... (por ejemplo "buenos días").
     const params = new URLSearchParams(location.search);
@@ -169,11 +186,14 @@ function Main({ onLogout }: { onLogout(): void }) {
   // Al volver a la app (iOS la congela en segundo plano), refresco.
   useEffect(() => {
     const fn = () => {
-      if (document.visibilityState === "visible") api.sync().then(() => loadEvents({ markChanges: true }), () => {});
+      if (document.visibilityState === "visible") {
+        api.sync().then(() => loadEvents({ markChanges: true }), () => {});
+        loadSession();
+      }
     };
     document.addEventListener("visibilitychange", fn);
     return () => document.removeEventListener("visibilitychange", fn);
-  }, [loadEvents]);
+  }, [loadEvents, loadSession]);
 
   const weekVisible = wide || tab === "week";
 
@@ -208,6 +228,8 @@ function Main({ onLogout }: { onLogout(): void }) {
         void speak(res.message.text, res.message.lang ?? "es", settingsRef.current.voice);
       }
       void loadPendings();
+      if (res.session) setSession(res.session);
+      if (res.session === undefined && /para el temporizador|stop/i.test(req.text)) loadSession();
       if (res.notice) showToast(res.notice);
       if (res.preview) {
         setPreview(res.preview);
@@ -345,6 +367,20 @@ function Main({ onLogout }: { onLogout(): void }) {
         if (sec === "history") void loadHistory();
       }}
       money={tab === "more" && moreSection === "money" ? <Money today={today} onSaveSettings={saveSettingsPatch} onToast={showToast} /> : null}
+      wellbeing={
+        tab === "more" && moreSection === "wellbeing" ? (
+          <Wellbeing
+            onToast={showToast}
+            onStart={(kind, opt) => {
+              api.startSession(kind, opt).then((r) => setSession(r.session), (err: Error) => showToast(err.message));
+            }}
+            onAsk={(t) => {
+              setTab("chat");
+              void send(t, []);
+            }}
+          />
+        ) : null
+      }
       food={
         tab === "more" && moreSection === "food" ? (
           <Food
@@ -436,6 +472,19 @@ function Main({ onLogout }: { onLogout(): void }) {
         </button>
       )}
       {toast && <div className="toast">{toast}</div>}
+
+      {session && (
+        <SessionPlayer
+          key={`${session.id}:${session.startedAt}:${session.status}`}
+          session={session}
+          textOnly={textOnly}
+          voice={settings.voice}
+          onPause={() => api.sessionAction(session.id, "pause").then((r) => r.session && setSession(r.session), (e: Error) => showToast(e.message))}
+          onResume={() => api.sessionAction(session.id, "resume").then((r) => r.session && setSession(r.session), (e: Error) => showToast(e.message))}
+          onStop={() => api.sessionAction(session.id, "cancel").finally(() => setSession(null))}
+          onDone={() => setSession(null)}
+        />
+      )}
 
       {showSettings && (
         <Settings

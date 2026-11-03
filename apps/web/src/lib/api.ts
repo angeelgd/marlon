@@ -9,6 +9,9 @@ import type {
   Expense,
   ExpenseCategory,
   PayRuleSet,
+  Book,
+  Memory,
+  WellbeingSession,
   SchedulePreview,
   Settings,
   UiMessage,
@@ -106,6 +109,20 @@ export const api = {
   food: () => request<FoodData>("/food"),
   toggleShopping: (week: string, name: string, checked: boolean) => post<{ ok: true }>("/food/shopping/toggle", { week, name, checked }),
 
+  session: () => request<{ session: WellbeingSession | null }>("/session"),
+  sessionAction: (id: string, action: "pause" | "resume" | "cancel") =>
+    post<{ session?: WellbeingSession }>(`/session/${encodeURIComponent(id)}/${action}`),
+  startSession: (kind: "meditation" | "stretch", opt: number | "post_gym" | "desk") =>
+    post<{ session: WellbeingSession }>("/session/start", kind === "meditation" ? { kind, minutes: opt } : { kind, routine: opt }),
+  reading: () => request<ReadingData>("/reading"),
+  memories: () => request<{ memories: Memory[] }>("/memories"),
+  addMemory: (content: string, category: Memory["category"]) => post<unknown>("/memories", { content, category }),
+  updateMemory: (id: string, content: string) =>
+    request<{ ok: true }>(`/memories/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ content }) }),
+  deleteMemory: (id: string) =>
+    request<{ ok: true }>(`/memories/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "content-type": "application/json" } }),
+  knowledge: () => request<{ docs: { id: string; title: string; sources: string[] }[] }>("/knowledge"),
+
   settings: () => request<{ settings: Settings; calendarBackend: "google" | "local" }>("/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     request<{ settings: Settings }>("/settings", { method: "PUT", body: JSON.stringify(patch) }),
@@ -181,4 +198,10 @@ export interface FoodData {
     shopping: ShoppingGroup[];
   } | null;
   recipes: { videoId: string; url: string; title: string; channel: string | null; source: string; recipe: { highlights: string; servings: number } }[];
+}
+
+export interface ReadingData {
+  current: Book | null;
+  estimate: { pacePerTrip: number | null; remainingMinutes: number | null; remainingTrips: number | null; finishDate: string | null } | null;
+  books: Book[];
 }
