@@ -291,6 +291,7 @@ Si el despliegue falla en el paso de migraciones por falta de permisos, aplícal
 1. Crea una clave en Google AI Studio.
 2. **Modelo:** por defecto `LLM_MODEL` es `gemini-flash-latest`, un alias que Google mantiene apuntando al Flash más reciente y que avisa dos semanas antes de cambiarlo. Así no depende de modelos con fecha de retirada: `gemini-2.5-flash`, por ejemplo, se retira a finales de 2026.
    - Para fijar un modelo concreto, pon su id en `LLM_MODEL`, en `apps/api/wrangler.toml` (`[vars]`). Antes, **comprueba en la consola de AI Studio** su cuota gratuita y sus límites, que dependen de cada proyecto.
+   - Si el modelo está saturado (error 503, frecuente en horas punta) o se queda sin cuota (429), Marlon reintenta y luego pasa a `gemini-flash-lite-latest`, que tiene su propia cuota. Puedes cambiar la reserva con `LLM_FALLBACK_MODELS` (separados por comas) o desactivarla con `none`.
    - Los modelos Gemini 3.x han dejado obsoleto el parámetro `temperature`, así que Marlon no lo envía. Si usas otro proveedor que sí lo use, pon `LLM_SEND_TEMPERATURE=1`.
 3. Sube la clave como secreto:
 

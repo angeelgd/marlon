@@ -12,8 +12,14 @@ export interface OpenAiCompatibleConfig {
    * defecto no se envía; actívalo (LLM_SEND_TEMPERATURE=1) para proveedores que la usen.
    */
   sendTemperature?: boolean;
+  /**
+   * Modelos de reserva por si el principal está saturado (503) o sin cuota (429).
+   * Se prueban en orden tras agotar los reintentos del anterior.
+   */
+  fallbackModels?: string[];
   maxRetries?: number;
   fetchImpl?: typeof fetch;
+  sleepImpl?: (ms: number) => Promise<void>;
 }
 
 interface ApiChoice {
@@ -35,16 +41,30 @@ export class OpenAiCompatibleProvider implements LlmProvider {
   }
 
   async chat(req: LlmRequest): Promise<LlmResponse> {
-    const body: Record<string, unknown> = {
-      model: req.vision && this.cfg.visionModel ? this.cfg.visionModel : this.cfg.model,
-      messages: req.messages,
-    };
+    const primary = req.vision && this.cfg.visionModel ? this.cfg.visionModel : this.cfg.model;
+    const models = [primary, ...(this.cfg.fallbackModels ?? [])].filter((m, i, all) => m && all.indexOf(m) === i);
+    let lastError: LlmError | null = null;
+    for (const model of models) {
+      try {
+        return await this.chatWith(model, req);
+      } catch (err) {
+        // Solo se cambia de modelo si el fallo es de saturación o cuota, no si la petición es mala.
+        if (!(err instanceof LlmError) || !err.retryable) throw err;
+        lastError = err;
+      }
+    }
+    throw lastError ?? new LlmError("No hay ningún modelo configurado.", null, false);
+  }
+
+  private async chatWith(model: string, req: LlmRequest): Promise<LlmResponse> {
+    const body: Record<string, unknown> = { model, messages: req.messages };
     if (this.cfg.sendTemperature && req.temperature !== undefined) body.temperature = req.temperature;
     if (req.tools?.length) body.tools = req.tools;
     if (req.json) body.response_format = { type: "json_object" };
 
     const url = `${this.cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
     const doFetch = this.cfg.fetchImpl ?? fetch;
+    const wait = this.cfg.sleepImpl ?? sleep;
     const maxRetries = this.cfg.maxRetries ?? 2;
 
     for (let attempt = 0; ; attempt++) {
@@ -57,7 +77,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         });
       } catch (err) {
         if (attempt < maxRetries) {
-          await sleep(500 * 2 ** attempt);
+          await wait(500 * 2 ** attempt);
           continue;
         }
         throw new LlmError(`No se pudo contactar con el modelo: ${(err as Error).message}`, null, true);
@@ -68,17 +88,22 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       const retryable = res.status === 429 || res.status >= 500;
       if (retryable && attempt < maxRetries) {
         const retryAfter = Number(res.headers.get("retry-after"));
-        await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 5) * 1000 : 800 * 2 ** attempt);
+        await wait(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 5) * 1000 : 1000 * 2 ** attempt);
         continue;
       }
       const text = (await res.text()).slice(0, 500);
-      const msg =
-        res.status === 429
-          ? "Se ha alcanzado el límite de peticiones del modelo. Prueba de nuevo en un rato."
-          : `El modelo respondió con un error ${res.status}: ${text}`;
-      throw new LlmError(msg, res.status, retryable);
+      throw new LlmError(friendlyMessage(res.status, text), res.status, retryable);
     }
   }
+}
+
+function friendlyMessage(status: number, text: string): string {
+  if (status === 429) return "Se ha alcanzado el límite de peticiones del modelo. Prueba de nuevo en un rato.";
+  if (status === 503 || status === 502 || status === 504) {
+    return "El modelo de IA está saturado ahora mismo (le pasa a Google en horas punta). Vuelve a intentarlo en uno o dos minutos.";
+  }
+  if (status >= 500) return `El modelo tuvo un fallo interno (${status}). Vuelve a intentarlo en un momento.`;
+  return `El modelo respondió con un error ${status}: ${text}`;
 }
 
 export function parseResponse(json: unknown): LlmResponse {

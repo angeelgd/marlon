@@ -54,6 +54,47 @@ describe("OpenAiCompatibleProvider", () => {
   });
 });
 
+describe("modelos de reserva", () => {
+  const noSleep = async () => {};
+  it("si el principal está saturado (503), pasa al de reserva", async () => {
+    const busy = () => new Response('{"error":{"code":503,"status":"UNAVAILABLE"}}', { status: 503 });
+    const { fn, calls } = fakeFetch([busy(), busy(), ok({ choices: [{ message: { content: "hola" } }] })]);
+    const p = new OpenAiCompatibleProvider({
+      name: "t", baseUrl: "https://a", apiKey: "k", model: "m", fallbackModels: ["lite"], tier: "free",
+      fetchImpl: fn, maxRetries: 1, sleepImpl: noSleep,
+    });
+    expect((await p.chat({ messages: [] })).content).toBe("hola");
+    expect(calls.map((c) => (c.body as { model: string }).model)).toEqual(["m", "m", "lite"]);
+  });
+
+  it("da un mensaje claro si todos están saturados y no cambia de modelo ante un 400", async () => {
+    const busy = () => new Response("x", { status: 503 });
+    const f = fakeFetch([busy(), busy()]);
+    const p = new OpenAiCompatibleProvider({
+      name: "t", baseUrl: "https://a", apiKey: "k", model: "m", fallbackModels: ["lite"], tier: "free",
+      fetchImpl: f.fn, maxRetries: 0, sleepImpl: noSleep,
+    });
+    await expect(p.chat({ messages: [] })).rejects.toThrow(/saturado/);
+
+    const bad = fakeFetch([new Response("bad", { status: 400 })]);
+    const p2 = new OpenAiCompatibleProvider({
+      name: "t", baseUrl: "https://a", apiKey: "k", model: "m", fallbackModels: ["lite"], tier: "free",
+      fetchImpl: bad.fn, maxRetries: 0, sleepImpl: noSleep,
+    });
+    await expect(p2.chat({ messages: [] })).rejects.toThrow(/400/);
+    expect(bad.calls).toHaveLength(1);
+  });
+
+  it("con Gemini usa Flash-Lite de reserva salvo que se configure otra cosa", async () => {
+    const { fallbackModels } = await import("../src/llm/router");
+    const gem = "https://generativelanguage.googleapis.com/v1beta/openai";
+    expect(fallbackModels(testEnv({}), gem)).toEqual(["gemini-flash-lite-latest"]);
+    expect(fallbackModels(testEnv({ LLM_FALLBACK_MODELS: "a, b" }), gem)).toEqual(["a", "b"]);
+    expect(fallbackModels(testEnv({ LLM_FALLBACK_MODELS: "none" }), gem)).toEqual([]);
+    expect(fallbackModels(testEnv({}), "https://openrouter.ai/api/v1")).toEqual([]);
+  });
+});
+
 describe("temperatura y modelo por defecto", () => {
   it("no envía temperature salvo que se active (Gemini 3.x la ha dejado obsoleta)", async () => {
     const mk = (sendTemperature: boolean) => {
