@@ -1,7 +1,7 @@
-import { AlertTriangle, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Landmark, RefreshCw, X } from "lucide-react";
 import { CATEGORY_LABELS, formatEuros, type ExpenseCategory, type PayRuleSet, type PayRules, type Settings } from "@marlon/shared";
 import { useCallback, useEffect, useState } from "react";
-import { api, type DayComparison, type MoneyData } from "../lib/api";
+import { api, type BankStatus, type DayComparison, type MoneyData } from "../lib/api";
 
 interface Props {
   today: string;
@@ -31,6 +31,12 @@ export function Money({ today, onSaveSettings, onToast }: Props) {
   const [month, setMonth] = useState(today.slice(0, 7));
   const [data, setData] = useState<MoneyData | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [bank, setBank] = useState<BankStatus | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    api.bank().then(setBank, () => setBank(null));
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -65,6 +71,54 @@ export function Money({ today, onSaveSettings, onToast }: Props) {
         <h2>{monthName(month)}</h2>
         <button className="icon-btn sm" onClick={() => setMonth((m) => shiftMonth(m, 1))} aria-label="Mes siguiente"><ChevronRight size={18} strokeWidth={1.75} /></button>
       </header>
+
+      {bank && bank.links.some((l) => l.status === "active") && (
+        <div className="card">
+          <div className="card-head">
+            <span className="eyebrow">
+              <Landmark size={12} strokeWidth={2} style={{ verticalAlign: -1, marginRight: 6 }} />
+              Saldo en el banco
+            </span>
+            <button
+              className="icon-btn sm"
+              aria-label="Actualizar desde el banco"
+              disabled={syncing}
+              onClick={async () => {
+                setSyncing(true);
+                try {
+                  const r = await api.bankSync();
+                  onToast(r.errors.length ? r.errors[0]! : r.newExpenses ? `${r.newExpenses} gastos nuevos del banco` : "Todo al día");
+                  setBank(await api.bank());
+                  await load();
+                } catch (err) {
+                  onToast((err as Error).message);
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+            >
+              <RefreshCw size={16} strokeWidth={1.75} className={syncing ? "spin" : ""} />
+            </button>
+          </div>
+          <p className="hero-amount">
+            {formatEuros(bank.links.filter((l) => l.status === "active").flatMap((l) => l.accounts).reduce((t, a) => t + (a.balanceCents ?? 0), 0))}
+          </p>
+          <ul className="bank-accounts">
+            {bank.links
+              .filter((l) => l.status === "active")
+              .flatMap((l) => l.accounts.map((a) => ({ ...a, bank: l.bank })))
+              .map((a) => (
+                <li key={a.uid}>
+                  <span>
+                    {a.name ?? a.bank} <span className="muted small">{a.iban}</span>
+                  </span>
+                  <b className="num">{a.balanceCents === null ? "—" : formatEuros(a.balanceCents)}</b>
+                </li>
+              ))}
+          </ul>
+          <p className="muted small">Los cargos del banco entran solos como gastos. Si alguno está mal clasificado, cámbialo abajo y Marlon lo recordará.</p>
+        </div>
+      )}
 
       <div className="card">
         <span className="eyebrow">Sueldo estimado · bruto</span>
@@ -153,9 +207,31 @@ export function Money({ today, onSaveSettings, onToast }: Props) {
         <ul className="expense-list">
           {data.expenses.map((e) => (
             <li key={e.id}>
-              <div>
+              <div className="exp-main">
                 <span>{e.merchant || CATEGORY_LABELS[e.category]}</span>
-                <span className="muted small"> {dayName(e.date)} · {CATEGORY_LABELS[e.category]}{e.source === "receipt" ? " · ticket" : ""}</span>
+                <span className="exp-meta">
+                  <span className="muted small">
+                    {dayName(e.date)}
+                    {e.source === "receipt" ? " · ticket" : e.source === "bank" ? " · banco" : ""}
+                  </span>
+              <select
+                className="cat-select"
+                value={e.category}
+                aria-label="Categoría"
+                onChange={(ev) =>
+                  act(async () => {
+                    const r = await api.recategorizeExpense(e.id, ev.target.value);
+                    if (r.updated > 1) onToast(`Cambiados ${r.updated} gastos de ese comercio`);
+                  })
+                }
+              >
+                {CATS.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_LABELS[c]}
+                  </option>
+                ))}
+              </select>
+                </span>
               </div>
               <span>{formatEuros(e.amountCents)}</span>
               <button className="icon-btn sm quiet" aria-label="Borrar gasto" onClick={() => act(() => api.deleteExpense(e.id), "Gasto borrado")}><X size={15} strokeWidth={1.75} /></button>

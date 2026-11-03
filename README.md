@@ -367,6 +367,22 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 3. Rellena en Ajustes las direcciones de casa, el trabajo, la uni y el gimnasio, y si hace falta la ciudad con sus coordenadas para el tiempo (por defecto, Turku).
 
+### Banco (opcional, solo lectura)
+
+Marlon lee saldos y movimientos con [Enable Banking](https://enablebanking.com), un agregador PSD2 finlandés que cubre bancos de toda Europa (por ejemplo, los de Finlandia y BBVA en España). Para tus propias cuentas es gratis (modo restringido). Puedes conectar varios bancos: el país se elige al conectar cada uno.
+
+1. En el Control Panel de Enable Banking, crea una aplicación **Production** con la Redirect URL que muestra *Ajustes > Conexiones > Banco* (`https://<tu-worker>/api/bank/callback`). El navegador descarga la clave privada `.pem`.
+2. En esa aplicación, pulsa **Link accounts** y enlaza tus cuentas. En modo restringido, solo se pueden leer las cuentas enlazadas.
+3. En Marlon, pega el Application ID y el `.pem`. Marlon comprueba la firma antes de guardarlos, cifrados.
+4. Elige tu banco y pulsa **Conectar**. Autorizas en la web del banco y vuelves a Marlon con las cuentas conectadas.
+
+Cómo funciona:
+
+- **Primera descarga:** trae 90 días de movimientos. Después, Marlon actualiza cada unas 6 horas (PSD2 limita a unas 4 consultas al día sin ti delante), o cuando pulsas Actualizar.
+- **Gastos:** los cargos ya contabilizados pasan a ser gastos, categorizados por reglas de comercios finlandeses, por lo que corriges y, si hay clave de pago, por el modelo. Si el gasto ya estaba apuntado a mano (mismo importe, ±2 días), se enlaza y no se duplica. Los traspasos entre tus cuentas no cuentan como gasto.
+- **Permiso:** el banco lo concede por 90 a 180 días. Cuando caduca, Marlon avisa para volver a conectarlo.
+- **Seguridad:** Marlon nunca puede hacer pagos ni transferencias.
+
 ### 5. Vídeos de batch cooking (opcional)
 
 1. En Google Cloud Console, activa la **YouTube Data API v3** y crea una clave restringida a esa API. Pégala en *Ajustes > Conexiones > YouTube* (Marlon comprueba que funciona) o súbela como secreto:

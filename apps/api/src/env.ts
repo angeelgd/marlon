@@ -36,6 +36,10 @@ export interface Env {
   GEMINI_API_KEY?: string;
   LLM_VIDEO_MODEL?: string;
 
+  /** Enable Banking (banca abierta PSD2): id de la aplicación y su clave privada PEM. */
+  ENABLE_BANKING_APP_ID?: string;
+  ENABLE_BANKING_PRIVATE_KEY?: string;
+
   /** URL iCal de Lukkari. Su parámetro hash= es una contraseña: solo como secreto. */
   UNIVERSITY_ICAL_URL?: string;
 

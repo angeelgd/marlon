@@ -11,6 +11,8 @@ export const STORED_CREDENTIALS = [
   "GOOGLE_REFRESH_TOKEN",
   "YOUTUBE_API_KEY",
   "GOOGLE_MAPS_API_KEY",
+  "ENABLE_BANKING_APP_ID",
+  "ENABLE_BANKING_PRIVATE_KEY",
 ] as const;
 export type StoredCredential = (typeof STORED_CREDENTIALS)[number];
 

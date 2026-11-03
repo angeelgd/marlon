@@ -1,6 +1,7 @@
-import { CalendarDays, Check, ChevronDown, Copy, CirclePlay, Map as MapIcon, type LucideIcon } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, Copy, CirclePlay, Landmark, Map as MapIcon, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api, type Connections as C } from "../lib/api";
+import { api, type Aspsp, type BankStatus, type Connections as C } from "../lib/api";
+import { formatEuros } from "@marlon/shared";
 import { Group } from "./SettingsParts";
 
 type Msg = { text: string; err?: boolean } | null;
@@ -16,6 +17,7 @@ export function Connections() {
   return (
     <Group id="s-conexiones" title="Conexiones" foot="Las claves se guardan cifradas en tu base de datos y nunca se vuelven a mostrar.">
       <GoogleCalendar data={data} onChange={load} />
+      <Bank data={data} onChange={load} />
       <ApiKey
         name="youtube"
         icon={CirclePlay}
@@ -291,6 +293,268 @@ function ApiKey(props: {
               </button>
             </div>
           )}
+        </>
+      )}
+      {msg && <p className={`s-msg ${msg.err ? "err" : ""}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
+const fmtDay = (iso: string | null) =>
+  iso ? new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso)) : "";
+const fmtWhen = (iso: string | null) =>
+  iso ? new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "nunca";
+
+const COUNTRIES: [string, string][] = [
+  ["FI", "Finlandia"],
+  ["ES", "España"],
+  ["PT", "Portugal"],
+  ["FR", "Francia"],
+  ["DE", "Alemania"],
+  ["IT", "Italia"],
+  ["NL", "Países Bajos"],
+  ["SE", "Suecia"],
+  ["EE", "Estonia"],
+  ["LT", "Lituania"],
+];
+
+/** Banca abierta (PSD2) con Enable Banking: solo lectura de saldos y movimientos. */
+function Bank({ data, onChange }: { data: C | null; onChange(): void }) {
+  const src = data?.bank.source ?? null;
+  const [status, setStatus] = useState<BankStatus | null>(null);
+  const [banks, setBanks] = useState<Aspsp[] | null>(null);
+  const [choice, setChoice] = useState("");
+  const [country, setCountry] = useState("FI");
+  const [appId, setAppId] = useState("");
+  const [pem, setPem] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+
+  const loadStatus = useCallback(() => {
+    api.bank().then(setStatus, () => {});
+  }, []);
+  useEffect(() => {
+    if (src) loadStatus();
+  }, [src, loadStatus]);
+
+  const active = (status?.links ?? []).filter((l) => l.status === "active");
+  const expired = (status?.links ?? []).filter((l) => l.status === "expired");
+  const showPicker = Boolean(src) && !editing && (adding || (status !== null && active.length === 0));
+
+  useEffect(() => {
+    if (!showPicker) return;
+    let alive = true;
+    setBanks(null);
+    setChoice("");
+    api.bankAspsps(country).then(
+      (r) => alive && setBanks(r.aspsps.sort((a, b) => a.name.localeCompare(b.name))),
+      (err: Error) => alive && setMsg({ text: err.message, err: true }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [showPicker, country]);
+
+  const run = async (fn: () => Promise<unknown>, ok?: string) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await fn();
+      if (ok) setMsg({ text: ok });
+      return true;
+    } catch (err) {
+      setMsg({ text: (err as Error).message, err: true });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const total = active.flatMap((l) => l.accounts).reduce((s, a) => s + (a.balanceCents ?? 0), 0);
+
+  return (
+    <div className="s-block">
+      <Row
+        icon={Landmark}
+        title="Banco"
+        ok={active.length > 0}
+        status={
+          !data
+            ? "Comprobando…"
+            : active.length
+              ? `${active.map((l) => l.bank).join(", ")} · saldo ${formatEuros(total)}`
+              : src
+                ? "Listo para conectar tu banco."
+                : "Lee tus movimientos y gastos, solo lectura."
+        }
+        action={
+          src === "app" && !editing && active.length === 0 ? (
+            <button type="button" className="btn ghost small" onClick={() => setEditing(true)}>
+              Cambiar app
+            </button>
+          ) : null
+        }
+      />
+
+      {active.map((l) => (
+        <div key={l.id} className="bank-link">
+          <ul className="bank-accounts">
+            {l.accounts.map((a) => (
+              <li key={a.uid}>
+                <span>
+                  {a.name ?? "Cuenta"} <span className="muted small">{a.iban}</span>
+                </span>
+                <b className="num">{a.balanceCents === null ? "—" : formatEuros(a.balanceCents)}</b>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">
+            {l.bank} · actualizado {fmtWhen(l.lastSyncAt)} · permiso hasta {fmtDay(l.validUntil)}
+            {l.lastError ? ` · ${l.lastError}` : ""}
+          </p>
+          <div className="actions-row">
+            <button
+              type="button"
+              className="btn soft small"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const r = await api.bankSync();
+                  loadStatus();
+                  setMsg({ text: r.errors.length ? r.errors.join(" ") : `${r.newTransactions} movimientos nuevos, ${r.newExpenses} gastos apuntados.`, err: r.errors.length > 0 });
+                })
+              }
+            >
+              {busy ? "Actualizando…" : "Actualizar ahora"}
+            </button>
+            <button
+              type="button"
+              className="btn ghost small"
+              disabled={busy}
+              onClick={() =>
+                window.confirm(`¿Desconectar ${l.bank}? Los gastos ya importados se quedan.`) &&
+                void run(async () => {
+                  await api.bankDisconnect(l.id);
+                  loadStatus();
+                }, "Banco desconectado.")
+              }
+            >
+              Desconectar
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {expired.length > 0 && <p className="s-msg err">El permiso de {expired.map((l) => l.bank).join(", ")} ha caducado. Vuelve a conectarlo abajo.</p>}
+
+      {active.length > 0 && !adding && (
+        <div className="actions-row">
+          <button type="button" className="btn ghost small" onClick={() => setAdding(true)}>
+            Añadir otro banco
+          </button>
+        </div>
+      )}
+
+      {showPicker && (
+        <form
+          className="s-input-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const a = banks?.find((b) => b.name === choice);
+            if (!a) return;
+            void run(async () => {
+              const { url } = await api.bankConnect(a);
+              window.location.href = url;
+            });
+          }}
+        >
+          <select className="field country" value={country} onChange={(e) => setCountry(e.target.value)} aria-label="País del banco">
+            {COUNTRIES.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select className="field" value={choice} onChange={(e) => setChoice(e.target.value)} aria-label="Banco">
+            <option value="">{banks ? "Elige tu banco" : "Cargando bancos…"}</option>
+            {banks?.map((b) => (
+              <option key={b.name} value={b.name}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <button className="btn" disabled={busy || !choice}>
+            {busy ? "Abriendo…" : "Conectar"}
+          </button>
+        </form>
+      )}
+
+      {data && (!src || editing) && src !== "secret" && (
+        <>
+          <Steps
+            items={[
+              "Entra en enablebanking.com, crea una cuenta gratuita y abre el Control Panel.",
+              "Applications > Add a new application: entorno Production, nombre Marlon, y como Redirect URL esta dirección:",
+            ]}
+          >
+            <CopyField value={data.bank.redirectUri} />
+            <ol start={3}>
+              <li>Al crearla, el navegador descarga la clave privada (un archivo .pem). Guárdala: no se puede volver a descargar.</li>
+              <li>En la aplicación, pulsa Link accounts y entra en cada banco que quieras usar (por ejemplo tu banco finlandés y BBVA): en uso personal, Marlon solo puede leer las cuentas que enlaces ahí.</li>
+              <li>Copia el Application ID y pégalo abajo junto con el archivo .pem.</li>
+            </ol>
+            <p className="muted small">Es gratis para tus propias cuentas. Marlon solo lee: no puede hacer pagos ni transferencias.</p>
+          </Steps>
+          <form
+            className="s-stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(() => api.saveConnection("enable-banking", { appId: appId.trim(), privateKey: pem })).then((ok) => {
+                if (ok) {
+                  setAppId("");
+                  setPem("");
+                  setEditing(false);
+                  setMsg({ text: "Aplicación comprobada. Ahora elige tu banco." });
+                  onChange();
+                }
+              });
+            }}
+          >
+            <input className="field" placeholder="Application ID" value={appId} onChange={(e) => setAppId(e.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+            <label className="file-pick">
+              <input
+                type="file"
+                accept=".pem,application/x-pem-file,application/x-x509-ca-cert,text/plain"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void f.text().then(setPem);
+                }}
+              />
+              <span>{pem ? "Clave privada cargada" : "Elegir el archivo .pem"}</span>
+            </label>
+            <textarea className="field area" placeholder="…o pega aquí el contenido del .pem" value={pem} onChange={(e) => setPem(e.target.value)} rows={3} spellCheck={false} />
+            <div className="actions-row">
+              <button className="btn" disabled={busy || appId.trim().length < 8 || pem.length < 100}>
+                {busy ? "Comprobando…" : "Guardar aplicación"}
+              </button>
+              {editing && (
+                <>
+                  <button type="button" className="btn ghost" onClick={() => setEditing(false)}>
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={() => window.confirm("¿Quitar la aplicación de Enable Banking?") && void run(() => api.deleteConnection("enable-banking")).then(onChange)}
+                  >
+                    Quitar
+                  </button>
+                </>
+              )}
+            </div>
+          </form>
         </>
       )}
       {msg && <p className={`s-msg ${msg.err ? "err" : ""}`}>{msg.text}</p>}

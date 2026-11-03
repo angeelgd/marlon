@@ -1105,3 +1105,26 @@ li.undone { opacity: 0.5; }
 .steps > p { margin: 10px 0 14px; }
 .copy-field { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; margin-bottom: 4px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line-strong); }
 .copy-field code { flex: 1; min-width: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+.bank-link { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.bank-accounts { list-style: none; margin: 0 0 6px; padding: 0; }
+.bank-accounts li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 5px 0; font-size: 14.5px; }
+.bank-accounts b { font-weight: 600; }
+.file-pick { position: relative; display: flex; align-items: center; justify-content: center; height: 44px; border-radius: var(--r-md); border: 1px dashed var(--line-strong); background: var(--bg); font-size: 14px; font-weight: 550; color: var(--text-2); cursor: pointer; }
+.file-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.field.area { height: auto; padding: 10px 14px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; resize: vertical; }
+.steps ol[start] { margin-top: 8px; }
+select.field { -webkit-appearance: none; appearance: none; }
+.cat-select { -webkit-appearance: none; appearance: none; border: 1px solid var(--line); background: var(--surface-2); color: var(--text-2); border-radius: 999px; height: 28px; padding: 0 10px; font-size: 12.5px; font-weight: 550; cursor: pointer; max-width: 120px; }
+.cat-select:focus { outline: none; border-color: var(--text-2); }
+.exp-main { display: flex; flex-direction: column; gap: 3px; }
+.exp-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card select.cat-select { height: 26px; padding: 0 10px; font-size: 12.5px; border-radius: 999px; background: var(--surface-2); border-color: transparent; color: var(--text-2); font-weight: 550; }
+@supports (-webkit-touch-callout: none) {
+  /* iOS amplía la página al tocar un select de menos de 16 px. */
+  .card select.cat-select { font-size: 16px; transform: scale(0.8); transform-origin: left center; margin-right: -20%; }
+}
+.s-input-row .field.country { flex: 0 0 132px; }
+@media (max-width: 420px) {
+  .s-input-row:has(.country) { flex-wrap: wrap; }
+  .s-input-row:has(.country) .field { flex: 1 1 100%; }
+}
