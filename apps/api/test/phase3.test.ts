@@ -187,7 +187,7 @@ describe("rutas de la fase 3", () => {
     }) as unknown as typeof fetch);
     const test = (await (await app.request(`${base}/push/test`, post({}), env)).json()) as { sent: number };
     expect(test.sent).toBe(1);
-    expect(decrypt(bodies[0]!, d).body).toBe("Las notificaciones funcionan 👌");
+    expect(decrypt(bodies[0]!, d).body).toBe("Las notificaciones funcionan.");
 
     await app.request(`${base}/push/unsubscribe`, post({ endpoint: d.sub.endpoint }), env);
     const n = await env.DB.prepare(`SELECT COUNT(*) AS n FROM push_subscriptions`).first<{ n: number }>();

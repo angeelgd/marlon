@@ -38,7 +38,7 @@ export const importUniversityCalendar = defineTool({
     if (r.skipped) {
       throw new ToolError(
         "No hay calendario de la uni configurado.",
-        "Explica que hay que guardar la URL iCal de Lukkari como secreto UNIVERSITY_ICAL_URL.",
+        "Explica que puede pegar el enlace iCal de Lukkari en Ajustes > Universidad.",
       );
     }
     return {

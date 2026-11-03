@@ -26,7 +26,8 @@ import { KNOWLEDGE } from "./knowledge";
 import { dispatchNotifications, enqueue, vapidFromEnv } from "./push/scheduler";
 import { toLocalIso } from "./lib/time";
 import { mondayOfDate, replanGymWeek } from "./planning/apply";
-import { syncUniversity } from "./university/sync";
+import { fetchIcal, syncUniversity } from "./university/sync";
+import { deleteUniversityIcalUrl, maskedHost, normalizeIcalUrl, saveUniversityIcalUrl, universityIcalUrl } from "./university/source";
 
 export const app = new Hono<{ Bindings: Env }>();
 
@@ -129,9 +130,46 @@ api.put("/settings", async (c) => {
 
 api.post("/university/sync", async (c) => {
   const { calendar, settings } = await calendarFor(c.env);
-  const r = await syncUniversity(c.env, calendar, settings);
-  if (r.skipped) return c.json({ error: "Falta el secreto UNIVERSITY_ICAL_URL." }, 400);
-  return c.json(r);
+  try {
+    const r = await syncUniversity(c.env, calendar, settings);
+    if (r.skipped) return c.json({ error: "Aún no has añadido el enlace del calendario de la universidad." }, 400);
+    return c.json(r);
+  } catch (err) {
+    if (err instanceof GoogleAuthError) throw err;
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+/** Estado del enlace de la uni. Nunca devuelve la URL (su hash= es una contraseña). */
+api.get("/university/link", async (c) => {
+  const { url, source } = await universityIcalUrl(c.env);
+  return c.json({ configured: Boolean(url), source, host: url ? maskedHost(url) : null });
+});
+
+/** Guarda el enlace (cifrado), comprueba que es un iCal y sincroniza. */
+api.put("/university/link", async (c) => {
+  const body = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
+  const { source } = await universityIcalUrl(c.env);
+  if (source === "secret") {
+    return c.json({ error: "El enlace está fijado como secreto en Cloudflare (UNIVERSITY_ICAL_URL). Cámbialo allí o bórralo para gestionarlo desde aquí." }, 409);
+  }
+  let url: string;
+  try {
+    url = normalizeIcalUrl(body.url ?? "");
+    await fetchIcal(url);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+  await saveUniversityIcalUrl(c.env, url);
+  const { calendar, settings } = await calendarFor(c.env);
+  const sync = await syncUniversity(c.env, calendar, settings, { url });
+  return c.json({ configured: true, source: "app", host: maskedHost(url), sync, changeIds: calendar.changeIds });
+});
+
+api.delete("/university/link", async (c) => {
+  await deleteUniversityIcalUrl(c.env);
+  const { url, source } = await universityIcalUrl(c.env);
+  return c.json({ configured: Boolean(url), source, host: url ? maskedHost(url) : null });
 });
 
 api.post("/gym/replan", async (c) => {
@@ -181,7 +219,7 @@ api.post("/push/test", async (c) => {
     kind: "test",
     at: now,
     title: "Marlon",
-    body: settings.textOnly ? "Las notificaciones funcionan (modo solo texto, sin sonido)." : "Las notificaciones funcionan 👌",
+    body: settings.textOnly ? "Las notificaciones funcionan (modo solo texto, sin sonido)." : "Las notificaciones funcionan.",
   });
   return c.json(await dispatchNotifications({ env: c.env, db: c.env.DB, settings, now }));
 });
