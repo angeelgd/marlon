@@ -305,12 +305,26 @@ const fmtDay = (iso: string | null) =>
 const fmtWhen = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "nunca";
 
+const COUNTRIES: [string, string][] = [
+  ["FI", "Finlandia"],
+  ["ES", "España"],
+  ["PT", "Portugal"],
+  ["FR", "Francia"],
+  ["DE", "Alemania"],
+  ["IT", "Italia"],
+  ["NL", "Países Bajos"],
+  ["SE", "Suecia"],
+  ["EE", "Estonia"],
+  ["LT", "Lituania"],
+];
+
 /** Banca abierta (PSD2) con Enable Banking: solo lectura de saldos y movimientos. */
 function Bank({ data, onChange }: { data: C | null; onChange(): void }) {
   const src = data?.bank.source ?? null;
   const [status, setStatus] = useState<BankStatus | null>(null);
   const [banks, setBanks] = useState<Aspsp[] | null>(null);
   const [choice, setChoice] = useState("");
+  const [country, setCountry] = useState("FI");
   const [appId, setAppId] = useState("");
   const [pem, setPem] = useState("");
   const [editing, setEditing] = useState(false);
@@ -330,13 +344,18 @@ function Bank({ data, onChange }: { data: C | null; onChange(): void }) {
   const showPicker = Boolean(src) && !editing && (adding || (status !== null && active.length === 0));
 
   useEffect(() => {
-    if (showPicker && banks === null) {
-      api.bankAspsps("FI").then(
-        (r) => setBanks(r.aspsps.sort((a, b) => a.name.localeCompare(b.name))),
-        (err: Error) => setMsg({ text: err.message, err: true }),
-      );
-    }
-  }, [showPicker, banks]);
+    if (!showPicker) return;
+    let alive = true;
+    setBanks(null);
+    setChoice("");
+    api.bankAspsps(country).then(
+      (r) => alive && setBanks(r.aspsps.sort((a, b) => a.name.localeCompare(b.name))),
+      (err: Error) => alive && setMsg({ text: err.message, err: true }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [showPicker, country]);
 
   const run = async (fn: () => Promise<unknown>, ok?: string) => {
     setBusy(true);
@@ -451,6 +470,13 @@ function Bank({ data, onChange }: { data: C | null; onChange(): void }) {
             });
           }}
         >
+          <select className="field country" value={country} onChange={(e) => setCountry(e.target.value)} aria-label="País del banco">
+            {COUNTRIES.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
+            ))}
+          </select>
           <select className="field" value={choice} onChange={(e) => setChoice(e.target.value)} aria-label="Banco">
             <option value="">{banks ? "Elige tu banco" : "Cargando bancos…"}</option>
             {banks?.map((b) => (
@@ -476,7 +502,7 @@ function Bank({ data, onChange }: { data: C | null; onChange(): void }) {
             <CopyField value={data.bank.redirectUri} />
             <ol start={3}>
               <li>Al crearla, el navegador descarga la clave privada (un archivo .pem). Guárdala: no se puede volver a descargar.</li>
-              <li>En la aplicación, pulsa Link accounts y entra en tu banco: en uso personal, Marlon solo puede leer las cuentas que enlaces ahí.</li>
+              <li>En la aplicación, pulsa Link accounts y entra en cada banco que quieras usar (por ejemplo tu banco finlandés y BBVA): en uso personal, Marlon solo puede leer las cuentas que enlaces ahí.</li>
               <li>Copia el Application ID y pégalo abajo junto con el archivo .pem.</li>
             </ol>
             <p className="muted small">Es gratis para tus propias cuentas. Marlon solo lee: no puede hacer pagos ni transferencias.</p>

@@ -21,16 +21,16 @@ export function merchantKey(name: string | null | undefined): string | null {
 /** Reglas para los comercios habituales en Finlandia. El orden importa: lo más concreto primero. */
 const RULES: [RegExp, ExpenseCategory][] = [
   [/spotify|netflix|disney|hbo|\bmax\b|viaplay|ruutu|youtube premium|apple\.com|icloud|google one|patreon|chatgpt|openai/, "subscriptions"],
-  [/espresso house|robert'?s coffee|starbucks|kahvila|\bcafe\b|coffee|kahvi/, "coffee"],
-  [/wolt|foodora|mcdonald|hesburger|burger king|subway|pizza|ravintola|kebab|sushi|unicafe|amica|sodexo|compass|juvenes|taco bell|max burgers/, "eating_out"],
-  [/k-?market|k-?supermarket|k-?citymarket|citymarket|s-?market|prisma|alepa|\bsale\b|lidl|lahikauppa|m-?market|r-?kioski|ruokakauppa/, "groceries"],
-  [/\bfoli\b|foli|\bhsl\b|\bvr\b|matkahuolto|onnibus|\buber\b|\bbolt\b|taksi|taxi|neste|\bst1\b|teboil|shell|\babc\b|kaupunkipyora|donkey|\btier\b|\bvoi\b|finnair|ryanair|norwegian/, "transport"],
+  [/espresso house|robert'?s coffee|starbucks|kahvila|\bcafe\b|coffee|kahvi|cafeteria/, "coffee"],
+  [/wolt|foodora|mcdonald|hesburger|burger king|subway|pizza|ravintola|kebab|sushi|unicafe|amica|sodexo|compass|juvenes|taco bell|max burgers|glovo|just ?eat|uber ?eats|telepizza|domino|restaurante|\bbar\s|cerveceria|vips|foster|goiko|100 montaditos|tgb\b/, "eating_out"],
+  [/k-?market|k-?supermarket|k-?citymarket|citymarket|s-?market|prisma|alepa|\bsale\b|lidl|lahikauppa|m-?market|r-?kioski|ruokakauppa|mercadona|carrefour|\bdia\b|alcampo|eroski|consum|hipercor|ahorramas|el corte ingles super|supercor|bon ?area|caprabo|bm supermercados|froiz|gadis|condis|aldi/, "groceries"],
+  [/\bfoli\b|foli|\bhsl\b|\bvr\b|matkahuolto|onnibus|\buber\b|\bbolt\b|taksi|taxi|neste|\bst1\b|teboil|shell|\babc\b|kaupunkipyora|donkey|\btier\b|\bvoi\b|finnair|ryanair|norwegian|renfe|\bemt\b|metro de|alsa|cabify|blablacar|iberia|vueling|repsol|cepsa|galp|\bbp\b|aena|parking/, "transport"],
   [/vuokra|\btys\b|ylioppilaskyla|\blumo\b|\bsato\b|kojamo|asunto/, "housing"],
-  [/elisa|telia|\bdna\b|helen|fortum|turku energia|oomi|vattenfall|sahko|vesi|vakuutus|\bif\b vakuutus|lahitapiola|fennia|pohjola vakuutus/, "utilities"],
-  [/apteekki|terveystalo|mehilainen|pihlajalinna|yths|fshs|hammas|optikko|instrumentarium|specsavers/, "health"],
+  [/elisa|telia|\bdna\b|helen|fortum|turku energia|oomi|vattenfall|sahko|vesi|vakuutus|\bif\b vakuutus|lahitapiola|fennia|pohjola vakuutus|iberdrola|endesa|naturgy|movistar|vodafone|orange|digi\b|masmovil|pepephone|aguas de|canal de isabel|mapfre|mutua/, "utilities"],
+  [/apteekki|terveystalo|mehilainen|pihlajalinna|yths|fshs|hammas|optikko|instrumentarium|specsavers|farmacia|sanitas|adeslas|dentist|clinica/, "health"],
   [/yliopisto|university|amk|akateeminen|suomalainen kirjakauppa|kurssi|course/, "education"],
   [/finnkino|elixia|fressi|liikunta|campusport|\bgym\b|kuntosali|steam|playstation|nintendo|xbox|lippu|ticketmaster|tiketti|bar\b|baari|pub\b|yokerho|club/, "leisure"],
-  [/amazon|zalando|h&m|\bikea\b|tokmanni|clas ohlson|gigantti|verkkokauppa|power\b|stockmann|motonet|\bxxl\b|intersport|normal\b|flying tiger|lindex|kappahl|\bjysk\b|halonen|sokos|aliexpress|temu/, "shopping"],
+  [/amazon|zalando|h&m|\bikea\b|tokmanni|clas ohlson|gigantti|verkkokauppa|power\b|stockmann|motonet|\bxxl\b|intersport|normal\b|flying tiger|lindex|kappahl|\bjysk\b|halonen|sokos|aliexpress|temu|el corte ingles|zara|primark|decathlon|mediamarkt|fnac|pull ?& ?bear|bershka|leroy merlin|shein/, "shopping"],
 ];
 
 export function ruleCategory(text: string): ExpenseCategory | null {

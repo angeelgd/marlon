@@ -56,6 +56,10 @@ describe("categorías", () => {
     expect(ruleCategory("Föli")).toBe("transport");
     expect(ruleCategory("Spotify P1234")).toBe("subscriptions");
     expect(ruleCategory("Apteekki Kupittaa")).toBe("health");
+    expect(ruleCategory("COMPRA EN MERCADONA VALENCIA")).toBe("groceries");
+    expect(ruleCategory("Glovo")).toBe("eating_out");
+    expect(ruleCategory("RENFE VIAJEROS")).toBe("transport");
+    expect(ruleCategory("Iberdrola clientes")).toBe("utilities");
     expect(ruleCategory("Cosa rara Oy")).toBeNull();
     expect(merchantKey("PAYPAL *SPOTIFY 4029357733")).toBe(merchantKey("PayPal *Spotify 1111"));
   });

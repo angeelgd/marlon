@@ -1123,3 +1123,8 @@ select.field { -webkit-appearance: none; appearance: none; }
   /* iOS amplía la página al tocar un select de menos de 16 px. */
   .card select.cat-select { font-size: 16px; transform: scale(0.8); transform-origin: left center; margin-right: -20%; }
 }
+.s-input-row .field.country { flex: 0 0 132px; }
+@media (max-width: 420px) {
+  .s-input-row:has(.country) { flex-wrap: wrap; }
+  .s-input-row:has(.country) .field { flex: 1 1 100%; }
+}

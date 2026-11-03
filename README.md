@@ -369,7 +369,7 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 ### Banco (opcional, solo lectura)
 
-Marlon lee saldos y movimientos con [Enable Banking](https://enablebanking.com), un agregador PSD2 finlandés. Para tus propias cuentas es gratis (modo restringido).
+Marlon lee saldos y movimientos con [Enable Banking](https://enablebanking.com), un agregador PSD2 finlandés que cubre bancos de toda Europa (por ejemplo, los de Finlandia y BBVA en España). Para tus propias cuentas es gratis (modo restringido). Puedes conectar varios bancos: el país se elige al conectar cada uno.
 
 1. En el Control Panel de Enable Banking, crea una aplicación **Production** con la Redirect URL que muestra *Ajustes > Conexiones > Banco* (`https://<tu-worker>/api/bank/callback`). El navegador descarga la clave privada `.pem`.
 2. En esa aplicación, pulsa **Link accounts** y enlaza tus cuentas. En modo restringido, solo se pueden leer las cuentas enlazadas.
