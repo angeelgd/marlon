@@ -162,7 +162,8 @@ export class EnableBanking {
   constructor(
     private readonly appId: string,
     private readonly pem: string,
-    private readonly fetchImpl: typeof fetch = fetch,
+    // Envuelta: en Workers, fetch llamado como método de otro objeto lanza "Illegal invocation".
+    private readonly fetchImpl: typeof fetch = ((input, init) => fetch(input, init)) as typeof fetch,
     private readonly base = ENABLE_BANKING_BASE,
   ) {}
 
