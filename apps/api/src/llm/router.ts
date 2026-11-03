@@ -24,12 +24,27 @@ const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/opena
  * Para fijar uno concreto, usa LLM_MODEL.
  */
 export const DEFAULT_MODEL = "gemini-flash-latest";
+/** Reserva por defecto con Gemini: Flash-Lite tiene otra cuota y suele estar menos saturado. */
+export const DEFAULT_FALLBACK_MODELS = ["gemini-flash-lite-latest"];
+
+/**
+ * LLM_FALLBACK_MODELS: lista separada por comas. "none" la desactiva.
+ * Sin valor, con el endpoint de Gemini se usa Flash-Lite; con otro proveedor, ninguna.
+ */
+export function fallbackModels(env: Env, baseUrl: string): string[] {
+  const raw = env.LLM_FALLBACK_MODELS?.trim();
+  if (raw === "none") return [];
+  if (raw) return raw.split(",").map((m) => m.trim()).filter(Boolean);
+  return baseUrl.includes("generativelanguage.googleapis.com") ? DEFAULT_FALLBACK_MODELS : [];
+}
 
 function freeProvider(env: Env): LlmProvider | null {
   if (!env.LLM_API_KEY) return null;
+  const baseUrl = env.LLM_BASE_URL || DEFAULT_BASE_URL;
   return new OpenAiCompatibleProvider({
     name: "default",
-    baseUrl: env.LLM_BASE_URL || DEFAULT_BASE_URL,
+    baseUrl,
+    fallbackModels: fallbackModels(env, baseUrl),
     apiKey: env.LLM_API_KEY,
     model: env.LLM_MODEL || DEFAULT_MODEL,
     visionModel: env.LLM_VISION_MODEL,
@@ -40,9 +55,11 @@ function freeProvider(env: Env): LlmProvider | null {
 
 function paidProvider(env: Env): LlmProvider | null {
   if (!env.LLM_PAID_API_KEY) return null;
+  const baseUrl = env.LLM_PAID_BASE_URL || env.LLM_BASE_URL || DEFAULT_BASE_URL;
   return new OpenAiCompatibleProvider({
     name: "paid",
-    baseUrl: env.LLM_PAID_BASE_URL || env.LLM_BASE_URL || DEFAULT_BASE_URL,
+    baseUrl,
+    fallbackModels: fallbackModels(env, baseUrl),
     apiKey: env.LLM_PAID_API_KEY,
     model: env.LLM_PAID_MODEL || env.LLM_MODEL || DEFAULT_MODEL,
     visionModel: env.LLM_VISION_MODEL,

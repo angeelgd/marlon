@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { OpenAiCompatibleProvider } from "../src/llm/openai-compatible";
-import { ConsentRequiredError, LlmError } from "../src/llm/provider";
+import { OpenAiCompatibleProvider, SKIP_SIGNATURE, withThoughtSignatures } from "../src/llm/openai-compatible";
+import { ConsentRequiredError, LlmError, type ToolCall } from "../src/llm/provider";
 import { getLlm } from "../src/llm/router";
 import { testEnv } from "./helpers";
 
@@ -51,6 +51,85 @@ describe("OpenAiCompatibleProvider", () => {
     const f2 = fakeFetch([new Response("x", { status: 429 }), new Response("x", { status: 429 })]);
     const p2 = new OpenAiCompatibleProvider({ name: "t", baseUrl: "https://a", apiKey: "k", model: "m", tier: "free", fetchImpl: f2.fn, maxRetries: 1 });
     await expect(p2.chat({ messages: [] })).rejects.toBeInstanceOf(LlmError);
+  });
+});
+
+describe("thought_signature de Gemini 3", () => {
+  const gem = "https://generativelanguage.googleapis.com/v1beta/openai";
+  it("conserva la firma de la respuesta y la reenvía en el siguiente turno", async () => {
+    const sig = { google: { thought_signature: "abc" } };
+    const { fn, calls } = fakeFetch([
+      ok({ choices: [{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "f", arguments: "{}" }, extra_content: sig }] } }] }),
+      ok({ choices: [{ message: { content: "listo" } }] }),
+    ]);
+    const p = new OpenAiCompatibleProvider({ name: "t", baseUrl: gem, apiKey: "k", model: "m", tier: "paid", fetchImpl: fn });
+    const r = await p.chat({ messages: [{ role: "user", content: "hola" }] });
+    expect(r.toolCalls[0]!.extra_content).toEqual(sig);
+    await p.chat({
+      messages: [
+        { role: "user", content: "hola" },
+        { role: "assistant", content: null, tool_calls: r.toolCalls },
+        { role: "tool", tool_call_id: "c1", content: "{}" },
+      ],
+    });
+    const sent = (calls[1]!.body as { messages: { tool_calls?: ToolCall[] }[] }).messages[1]!.tool_calls!;
+    expect(sent[0]!.extra_content).toEqual(sig);
+  });
+
+  it("al historial antiguo sin firma le pone el valor de omisión, solo en la primera llamada", () => {
+    const call = (id: string): ToolCall => ({ id, type: "function", function: { name: "f", arguments: "{}" } });
+    const out = withThoughtSignatures([{ role: "assistant", content: null, tool_calls: [call("a"), call("b")] }]);
+    const tc = (out[0] as { tool_calls: ToolCall[] }).tool_calls;
+    expect(tc[0]!.extra_content?.google?.thought_signature).toBe(SKIP_SIGNATURE);
+    expect(tc[1]!.extra_content).toBeUndefined();
+  });
+
+  it("no añade nada con proveedores que no son Gemini", async () => {
+    const { fn, calls } = fakeFetch([ok({ choices: [{ message: { content: "x" } }] })]);
+    const p = new OpenAiCompatibleProvider({ name: "t", baseUrl: "https://openrouter.ai/api/v1", apiKey: "k", model: "m", tier: "free", fetchImpl: fn });
+    await p.chat({ messages: [{ role: "assistant", content: null, tool_calls: [{ id: "a", type: "function", function: { name: "f", arguments: "{}" } }] }] });
+    expect(JSON.stringify(calls[0]!.body)).not.toContain("thought_signature");
+  });
+});
+
+describe("modelos de reserva", () => {
+  const noSleep = async () => {};
+  it("si el principal está saturado (503), pasa al de reserva", async () => {
+    const busy = () => new Response('{"error":{"code":503,"status":"UNAVAILABLE"}}', { status: 503 });
+    const { fn, calls } = fakeFetch([busy(), ok({ choices: [{ message: { content: "hola" } }] })]);
+    const p = new OpenAiCompatibleProvider({
+      name: "t", baseUrl: "https://a", apiKey: "k", model: "m", fallbackModels: ["lite"], tier: "free",
+      fetchImpl: fn, maxRetries: 1, sleepImpl: noSleep,
+    });
+    expect((await p.chat({ messages: [] })).content).toBe("hola");
+    expect(calls.map((c) => (c.body as { model: string }).model)).toEqual(["m", "lite"]);
+  });
+
+  it("da un mensaje claro si todos están saturados y no cambia de modelo ante un 400", async () => {
+    const busy = () => new Response("x", { status: 503 });
+    const f = fakeFetch([busy(), busy()]);
+    const p = new OpenAiCompatibleProvider({
+      name: "t", baseUrl: "https://a", apiKey: "k", model: "m", fallbackModels: ["lite"], tier: "free",
+      fetchImpl: f.fn, maxRetries: 0, sleepImpl: noSleep,
+    });
+    await expect(p.chat({ messages: [] })).rejects.toThrow(/saturado/);
+
+    const bad = fakeFetch([new Response("bad", { status: 400 })]);
+    const p2 = new OpenAiCompatibleProvider({
+      name: "t", baseUrl: "https://a", apiKey: "k", model: "m", fallbackModels: ["lite"], tier: "free",
+      fetchImpl: bad.fn, maxRetries: 0, sleepImpl: noSleep,
+    });
+    await expect(p2.chat({ messages: [] })).rejects.toThrow(/400/);
+    expect(bad.calls).toHaveLength(1);
+  });
+
+  it("con Gemini usa Flash-Lite de reserva salvo que se configure otra cosa", async () => {
+    const { fallbackModels } = await import("../src/llm/router");
+    const gem = "https://generativelanguage.googleapis.com/v1beta/openai";
+    expect(fallbackModels(testEnv({}), gem)).toEqual(["gemini-flash-lite-latest"]);
+    expect(fallbackModels(testEnv({ LLM_FALLBACK_MODELS: "a, b" }), gem)).toEqual(["a", "b"]);
+    expect(fallbackModels(testEnv({ LLM_FALLBACK_MODELS: "none" }), gem)).toEqual([]);
+    expect(fallbackModels(testEnv({}), "https://openrouter.ai/api/v1")).toEqual([]);
   });
 });
 

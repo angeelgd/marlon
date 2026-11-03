@@ -32,9 +32,11 @@ crons = ["*/5 * * * *", "7 */3 * * *"]
 [vars]
 LLM_PROVIDER = "openai-compatible"
 LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
-# Alias que Google mantiene en el Flash más reciente. Para fijar un modelo concreto,
-# pon su id (consulta los disponibles y su cuota gratuita en AI Studio).
-LLM_MODEL = "gemini-flash-latest"
+# Flash-Lite: el más barato y el que menos se satura. Para respuestas algo mejores
+# (y más caras) usa "gemini-flash-latest". Consulta modelos y cuotas en AI Studio.
+LLM_MODEL = "gemini-flash-lite-latest"
+# Si el principal está saturado, se prueba este.
+LLM_FALLBACK_MODELS = "gemini-flash-latest"
 
 # Despachador preciso de avisos (alarmas de Durable Object, plan gratuito con SQLite).
 [[durable_objects.bindings]]
