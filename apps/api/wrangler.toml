@@ -21,8 +21,8 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "marlon"
-# Sustituye por el id que devuelve `wrangler d1 create marlon`.
-database_id = "00000000-0000-0000-0000-000000000000"
+# Id de la base de datos D1 (no es un secreto: solo identifica la base de datos).
+database_id = "1c613b41-5187-459b-b17c-f018b7bff785"
 migrations_dir = "migrations"
 
 [triggers]

@@ -9,7 +9,8 @@
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply marlon --local",
-    "db:migrate:remote": "wrangler d1 migrations apply marlon --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply marlon --remote",
+    "deploy:ci": "wrangler d1 migrations apply marlon --remote && wrangler deploy"
   },
   "dependencies": {
     "@marlon/shared": "workspace:*",
