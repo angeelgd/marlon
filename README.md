@@ -2,11 +2,12 @@
 
 Agente personal de organización para una sola persona. Es una PWA que se instala en el iPhone y habla con un agente de IA que organiza la semana sobre Google Calendar.
 
-> **Estado: fases 1 a 4.**
+> **Estado: las 5 fases.**
 > - Fase 1 (núcleo): PWA, chat, capa de IA intercambiable, Google Calendar, calendario semanal animado con historial y deshacer, y foto del horario de trabajo.
 > - Fase 2 (planificación): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
 > - Fase 3 (voz y pendientes): voz con botón, modo solo texto, pendientes, recordatorios y notificaciones push.
 > - Fase 4 (dinero y comida): horas reales y sueldo, gastos, vídeos de batch cooking, menú y lista de la compra.
+> - Fase 5 (bienestar y lectura): temporizadores, meditación, estiramientos, lectura, memoria y base de conocimiento.
 
 ## Índice
 
@@ -123,6 +124,26 @@ Agente personal de organización para una sola persona. Es una PWA que se instal
   - Reserva la **sesión de cocina** en el calendario: el domingo antes si hay hueco, y si no el sábado o el lunes.
   - Revisa proteína, B12, hierro, omega 3, calcio, yodo y vitamina D, y recuerda que no sustituye a un profesional.
 
+### Fase 5: bienestar y lectura
+
+- **Temporizadores por intervalos** por voz o texto: "30 minutos de estudio, 5 de descanso, 4 veces" o "40 segundos de ejercicio, 20 de descanso, 8 rondas".
+  - Con la pantalla encendida, la PWA muestra la cuenta atrás exacta y suena un pitido en cada fase (salvo en modo solo texto). También pide a iOS que no apague la pantalla (Wake Lock).
+  - Se puede pausar, seguir, minimizar o terminar.
+- **Bloques de estudio** (`plan_study_blocks`): se colocan en el calendario buscando huecos y se reparten entre varios días, porque estudiar espaciado funciona mejor. Llevan descansos proporcionales: 50 minutos y 10 de descanso por defecto, configurable.
+- **Meditaciones guiadas** de 3, 5 o 10 minutos. Si no dices cuánto, Marlon elige según el tiempo libre hasta tu siguiente compromiso. El texto de cada paso se muestra y se lee en voz alta.
+- **Estiramientos guiados** paso a paso: después del gimnasio, o tras muchas horas programando (cuello, muñecas, espalda, ojos).
+- **Lectura** (Kindle, sobre todo en el bus). El seguimiento es semiautomático:
+  - Al acabar un trayecto le dices "voy por el 40 %". Si no lo has dicho, **Marlon pregunta al llegar al trabajo o la clase, y al volver a casa**.
+  - Con los minutos de cada trayecto calcula tu ritmo, cuántos trayectos te quedan y **qué día lo terminarás**, recorriendo tus próximos días con trabajo o clase en el calendario.
+  - Al acabar, te pide una nota del 1 al 5 y tu opinión con tus palabras. Con eso aprende tus gustos.
+  - Mientras hayas terminado menos de 3 libros, propone géneros variados, con dos ejemplos accesibles de cada uno.
+- **Memoria** (`remember_fact`, `forget_fact`): lo que Marlon aprende de ti (gustos, rutinas, preferencias de horario, personas). Puedes verla, editarla y borrarla en *Ajustes > Lo que Marlon sabe de ti*. Lo que parece económico se marca como sensible y no se envía por la capa gratuita.
+- **Base de conocimiento** (`apps/api/knowledge/*.md`): guías sobre sueño, entrenamiento, nutrición vegana, estudio, finanzas personales, y meditación y estiramientos.
+  - Las fuentes son conocidas: consenso AASM, OMS, metaanálisis de Schoenfeld y Morton, la Academy of Nutrition and Dietetics, Dunlosky y otras.
+  - Marlon detecta el tema del mensaje por palabras clave, **carga esa guía en el contexto** y **cita la fuente de cada consejo**. No hay base de datos vectorial.
+  - Para añadir una guía, crea otro `.md` con la misma cabecera (`title`, `keywords`, `sources`) y regístralo en `apps/api/src/knowledge/index.ts`.
+  - Son resúmenes generales: no sustituyen a un profesional.
+
 ## Arquitectura
 
 ```
@@ -144,6 +165,7 @@ scripts/
 | **El modelo transcribe y el código interpreta** | El modelo de visión devuelve las celdas tal cual (`"Oct-19"`, `"15.45"`, `"6,25"`). Un parser determinista con tests (`apps/api/src/schedule/parse.ts`) calcula las fechas y valida las horas. |
 | **Refresh token de Google como secreto** | Se obtiene una sola vez con `pnpm google:auth`. La base de datos no guarda tokens. |
 | **Sincronización por sondeo con `syncToken`** | Los canales *watch* de Google caducan y hay que renovarlos. Sondear cada 15 minutos sobra para un solo usuario. |
+| **Durable Object con alarmas** para los avisos | El cron mira cada 5 minutos, que no sirve para un descanso de 20 segundos. Un Durable Object (con SQLite, disponible en el plan gratuito) pone una alarma justo para el siguiente aviso. El cron sigue enviando como respaldo, y una reserva atómica evita mandar un aviso dos veces. |
 | **Escrituras en lote** con la API batch de Google Calendar | Importar el calendario de la uni puede suponer más de cien eventos. Agrupados de 50 en 50, caben en el límite de subpeticiones del plan gratuito de Workers. |
 | **Planificador determinista** | El gimnasio y el sueño se calculan con código probado, no con el modelo. El modelo solo los explica y pregunta. |
 | **La imagen no se guarda** | Se guarda temporalmente en D1 para procesarla, se borra al usarla y, si no se usa, el cron la elimina a las 24 h. |
@@ -166,6 +188,9 @@ Ver `apps/api/migrations/0001_init.sql`. Tablas principales:
 - `expenses` y `budget_items`: gastos, sueldo y gastos fijos.
 - `pending_consents`: mensaje con datos económicos esperando permiso.
 - `recipes` y `meal_plans`: recetas, menús y listas de la compra.
+- `sessions_wellbeing`: temporizadores, meditaciones y estiramientos (fases y pausas).
+- `books` y `reading_logs`: libros, progreso por trayecto, notas y opiniones.
+- `memories`: la memoria editable de Marlon.
 - `credentials` y `sessions`: passkeys y sesiones.
 
 ### Herramientas del agente
@@ -173,6 +198,7 @@ Ver `apps/api/migrations/0001_init.sql`. Tablas principales:
 - Fase 1: `list_events`, `create_event`, `move_event`, `delete_event`, `find_free_slots`, `parse_schedule_photo` y `confirm_schedule_import`.
 - Fase 2: `import_university_calendar`, `find_conflicts`, `plan_gym_week`, `get_sleep_plan`, `get_route`, `get_weather`, `get_daily_briefing` y `get_evening_review`.
 - Fase 3: `add_pending`, `close_pending`, `list_pendings` y `snooze_pending`.
+- Fase 5: `start_timer`, `stop_timer`, `start_meditation`, `start_stretching`, `plan_study_blocks`, `start_book`, `log_reading`, `finish_book`, `reading_status`, `suggest_books`, `remember_fact`, `forget_fact` y `consult_knowledge`.
 - Fase 4: `log_actual_shift`, `calc_monthly_pay`, `set_pay_option`, `log_expense`, `parse_receipt_photo`, `delete_expense`, `set_budget_item`, `expense_summary`, `find_cooking_videos`, `analyze_cooking_video` y `build_menu_and_shopping_list`.
 
 Cada herramienta tiene un esquema zod. Si el modelo envía argumentos que no pasan la validación, recibe el error con una pista y puede corregirse.
@@ -379,6 +405,8 @@ Una vez registrada la primera passkey, el código ya no basta: para añadir otra
 pnpm deploy
 ```
 
+El primer despliegue crea también el Durable Object de los avisos (migración `v1` en `apps/api/wrangler.toml`). No hay que hacer nada más.
+
 En el iPhone, abre la URL en Safari, ve a *Compartir > Añadir a pantalla de inicio* y abre Marlon desde el icono. La primera vez escribe el `SETUP_TOKEN` y crea la passkey.
 
 ## Secretos y privacidad
@@ -400,6 +428,7 @@ Los límites cambian. **Compruébalos en la documentación oficial antes de desp
 - **Workers (plan gratuito):** el tiempo de CPU por petición es corto. La espera a Google y al modelo no cuenta como CPU, por eso las imágenes se procesan en el navegador. El número de subpeticiones por invocación también está limitado, así que importar un horario solo crea, mueve o borra los turnos que cambian.
 - **D1 y Cron Triggers:** el uso de un solo usuario queda muy por debajo de los límites gratuitos. Marlon usa dos crons: cada 5 minutos (Google Calendar y notificaciones) y cada 3 horas (calendario de la uni). Por eso un aviso puede llegar hasta 5 minutos tarde.
 - **Routes API:** en la tarifa actual de Google Maps Platform cada SKU tiene llamadas gratuitas al mes (las de nivel Essentials, unas 10 000). Comprueba en la consola qué SKU usan las rutas en transporte público y en bici. Con la caché y sin consultar la bici en invierno, el uso de una persona queda muy por debajo.
+- **Durable Objects:** en el plan gratuito solo existen con almacenamiento SQLite, con límites diarios de peticiones. Marlon usa uno solo, con una alarma por aviso pendiente.
 - **YouTube Data API:** cada búsqueda cuesta 100 unidades de una cuota diaria limitada; consultar los detalles de un vídeo, 1. Marlon hace como mucho dos búsquedas por semana y las guarda en caché.
 - **Gemini con vídeos de YouTube:** en la capa gratuita hay un límite de horas de vídeo al día (8 horas según la documentación actual). Solo vídeos públicos. Cada receta se analiza una vez y se guarda.
 - **Open-Meteo:** gratis para uso no comercial, sin clave, con un uso razonable de unas 10 000 llamadas al día. Marlon guarda la previsión una hora en caché.
@@ -411,7 +440,11 @@ Los límites cambian. **Compruébalos en la documentación oficial antes de desp
 - El modo silencioso (`silent`) de las notificaciones depende de iOS. Para silencio total en clase o en el trabajo, combínalo con un modo de concentración.
 - La voz del navegador solo puede hablar después de un gesto. Por eso el botón del micro la "desbloquea" al pulsarlo.
 - Las notas de voz se transcriben antes de saber lo que dicen. Si hay clave de pago, la transcripción va siempre por ella. Si solo hay capa gratuita, el audio de una nota con datos económicos sí pasa por ella para transcribirse, aunque luego Marlon pide permiso antes de tratar su contenido. Para evitarlo del todo, configura la clave de pago o escribe esos datos.
-- Una PWA no puede mantener un temporizador exacto con la pantalla bloqueada. Los temporizadores de la fase 5 programarán una notificación push para cada cambio de fase en lugar de depender de un contador en el navegador.
+- **Temporizadores con la pantalla bloqueada:** una PWA no puede mantener un temporizador exacto con la pantalla bloqueada, porque iOS congela la página.
+  - Por eso **cada cambio de fase se programa en el servidor como una notificación push**, enviada a su hora por un Durable Object con alarmas al segundo.
+  - Con la pantalla encendida, la cuenta atrás de la app es exacta. Bloqueada, depende de que llegue la notificación, que puede tardar unos segundos.
+  - En los intervalos muy cortos (menos de 30 segundos) lo más fiable es dejar la app abierta. Marlon pide a iOS que no apague la pantalla (Wake Lock, que funciona en las apps instaladas desde iOS 18.4 según la información disponible).
+- Las meditaciones solo avisan al final, para no interrumpir.
 - iOS congela la app en segundo plano. Al volver, Marlon sincroniza con Google Calendar y anima lo que haya cambiado.
 
 ## Tests
@@ -445,6 +478,9 @@ pnpm typecheck
 - `apps/api/test/money.test.ts`: detección de datos económicos, flujo de permiso (esta vez, siempre, no enviar), clave de pago, historial sin datos económicos, herramientas que se niegan y resumen 50/30/20 con comparaciones.
 - `apps/api/test/food.test.ts`: YouTube, receta con Gemini (plan A) y desde la descripción (plan B), menú, lista de la compra, nutrición, presupuesto y sesión de cocina.
 - `apps/api/test/phase4-routes.test.ts`: avisos de caducidad de la tabla y de batch cooking, y rutas de dinero y comida.
+- `apps/api/test/wellbeing.test.ts`: intervalos ("30 + 5 × 4" y "40 s + 20 s × 8 rondas"), avisos a la hora exacta de cada fase, pausa y reanudación, meditaciones, estiramientos y bloques de estudio.
+- `apps/api/test/reading-memory.test.ts`: ritmo de lectura, fecha estimada, gustos, pregunta al acabar el trayecto, memoria sin duplicados ni datos económicos, y guías con sus fuentes.
+- `apps/api/test/phase5.test.ts`: dos despachos simultáneos no duplican avisos, temporizador y lectura desde el chat, guía y memoria en el contexto, y rutas.
 - `apps/web/test/week.test.ts`: cálculo de la semana y turnos partidos por la medianoche.
 - `apps/web/test/wav.test.ts`: conversión a WAV (cabecera, mono, remuestreo y base64).
 
@@ -456,4 +492,4 @@ Los tests de la API usan un D1 en memoria sobre `node:sqlite` (`apps/api/test/d1
 2. **Planificación** (hecha): calendario de la uni, gimnasio y sueño, rutas en bus y buenos días.
 3. **Voz y pendientes** (hecha): voz con botón, modo solo texto, pendientes, recordatorios y push.
 4. **Dinero y comida** (hecha): horas reales y sueldo, gastos, batch cooking, menú y lista de la compra.
-5. Bienestar y lectura: temporizadores, meditación, estiramientos, lectura, memoria y base de conocimiento.
+5. **Bienestar y lectura** (hecha): temporizadores, meditación, estiramientos, lectura, memoria y base de conocimiento.
