@@ -6,6 +6,12 @@ compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
 
 # La PWA compilada se sirve desde el mismo Worker (mismo origen que la API).
+# La base de conocimiento (apps/api/knowledge/*.md) se empaqueta como texto.
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
@@ -20,10 +26,19 @@ database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
 [triggers]
-# Sincronización incremental con Google Calendar cada 15 minutos.
-crons = ["*/15 * * * *"]
+# Cada 5 min: Google Calendar y notificaciones. Cada 3 h (minuto 7): calendario de la uni.
+crons = ["*/5 * * * *", "7 */3 * * *"]
 
 [vars]
 LLM_PROVIDER = "openai-compatible"
 LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 LLM_MODEL = "gemini-2.5-flash"
+
+# Despachador preciso de avisos (alarmas de Durable Object, plan gratuito con SQLite).
+[[durable_objects.bindings]]
+name = "SCHEDULER"
+class_name = "NotificationScheduler"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["NotificationScheduler"]

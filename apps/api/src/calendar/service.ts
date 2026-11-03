@@ -1,7 +1,7 @@
 import type { CalendarEvent, ChangeAction, ChangeLogEntry, EventKind } from "@marlon/shared";
 import { newId, nowIso } from "../lib/ids";
 import { anyToMs } from "../lib/time";
-import type { CalendarBackend, EventInput, RemoteEvent } from "./backend";
+import type { BatchOp, CalendarBackend, EventInput, RemoteEvent } from "./backend";
 
 interface CacheRow {
   id: string;
@@ -26,6 +26,20 @@ interface LogRow {
   after_json: string | null;
   group_id: string | null;
   undone_at: string | null;
+}
+
+export type BulkOp =
+  | { op: "create"; input: EventInput }
+  | { op: "move"; id: string; start: string; end: string }
+  | { op: "update"; id: string; fields: Partial<EventInput> }
+  | { op: "remove"; id: string };
+
+export type BulkItem = { ok: true; event: CalendarEvent | null } | { ok: false; error: string };
+
+export interface BulkResult {
+  /** Un resultado por operación, en el mismo orden (event es null en los borrados). */
+  items: BulkItem[];
+  failed: string[];
 }
 
 export interface ChangeMeta {
@@ -220,6 +234,94 @@ export class CalendarService {
     await this.db.prepare(`UPDATE events_cache SET deleted = 1, updated_at = ? WHERE id = ?`).bind(nowIso(), id).run();
     await this.log("delete", id, `Borrado "${before.title}" del ${this.fmt(before.start)}`, before, null, meta);
     return before;
+  }
+
+  /**
+   * Varias escrituras a la vez. En Google van en peticiones batch, así una
+   * importación grande no supera el límite de subpeticiones del Worker.
+   * Deja el mismo historial que las operaciones sueltas.
+   */
+  async bulk(ops: BulkOp[], meta: ChangeMeta = {}): Promise<BulkResult> {
+    const items: BulkItem[] = ops.map(() => ({ ok: false, error: "sin procesar" }));
+    const prepared: { index: number; before: CalendarEvent | null; batch: BatchOp; next?: EventInput }[] = [];
+
+    for (const [index, op] of ops.entries()) {
+      if (op.op === "create") {
+        const ev: EventInput = { ...op.input, start: this.norm(op.input.start), end: this.norm(op.input.end) };
+        if (Date.parse(ev.end) <= Date.parse(ev.start)) {
+          items[index] = { ok: false, error: `"${ev.title}": el final es anterior al inicio` };
+          continue;
+        }
+        prepared.push({ index, before: null, batch: { op: "insert", ev }, next: ev });
+        continue;
+      }
+      const before = await this.get(op.id);
+      if (!before) {
+        items[index] = { ok: false, error: `No existe el evento ${op.id}` };
+        continue;
+      }
+      if (op.op === "remove") {
+        prepared.push({ index, before, batch: { op: "remove", id: op.id } });
+      } else {
+        const fields: Partial<EventInput> =
+          op.op === "move" ? { start: this.norm(op.start), end: this.norm(op.end) } : { ...op.fields };
+        if (fields.start) fields.start = this.norm(fields.start);
+        if (fields.end) fields.end = this.norm(fields.end);
+        prepared.push({ index, before, batch: { op: "patch", id: op.id, ev: fields }, next: { ...toInput(before), ...fields } });
+      }
+    }
+
+    const results = await this.backend.batch(prepared.map((p) => p.batch));
+
+    for (let i = 0; i < prepared.length; i++) {
+      const p = prepared[i]!;
+      const r = results[i];
+      const label = p.next?.title ?? p.before?.title ?? "evento";
+      if (!r || !r.ok) {
+        items[p.index] = { ok: false, error: `${label}: ${r && !r.ok ? r.error : "sin respuesta"}` };
+        continue;
+      }
+      if (p.batch.op === "remove") {
+        await this.db.prepare(`UPDATE events_cache SET deleted = 1, updated_at = ? WHERE id = ?`).bind(nowIso(), p.before!.id).run();
+        await this.log("delete", p.before!.id, `Borrado "${p.before!.title}" del ${this.fmt(p.before!.start)}`, p.before, null, meta);
+        items[p.index] = { ok: true, event: null };
+        continue;
+      }
+      const id = r.event?.id ?? (p.batch.op === "patch" ? p.batch.id : null);
+      if (!id) {
+        items[p.index] = { ok: false, error: `${label}: el calendario no devolvió id` };
+        continue;
+      }
+      await this.upsertCache({ ...p.next!, ...(r.event ? stripEmpty(r.event) : {}), id });
+      const after = (await this.get(id))!;
+      if (p.batch.op === "insert") {
+        await this.log("create", id, `Creado "${after.title}" el ${this.fmt(after.start)}`, null, after, meta);
+      } else {
+        const moved = p.before!.start !== after.start || p.before!.end !== after.end;
+        await this.log(
+          moved ? "move" : "update",
+          id,
+          moved ? `Movido "${after.title}" del ${this.fmt(p.before!.start)} al ${this.fmt(after.start)}` : `Actualizado "${after.title}"`,
+          p.before,
+          after,
+          meta,
+        );
+      }
+      items[p.index] = { ok: true, event: after };
+    }
+    return { items, failed: items.filter((i): i is { ok: false; error: string } => !i.ok).map((i) => i.error) };
+  }
+
+  /** Eventos (no borrados) cuyo marlonKey empieza por el prefijo y caen en el rango. */
+  async listByKeyPrefix(prefix: string, fromIso?: string, toIso?: string): Promise<CalendarEvent[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT * FROM events_cache WHERE deleted = 0 AND marlon_key LIKE ?1 || '%'
+           AND (?2 IS NULL OR end_at > ?2) AND (?3 IS NULL OR start_at < ?3) ORDER BY start_at`,
+      )
+      .bind(prefix, fromIso ? this.norm(fromIso) : null, toIso ? this.norm(toIso) : null)
+      .all<CacheRow>();
+    return results.map(rowToEvent);
   }
 
   /* ---------------------------- historial ---------------------------- */

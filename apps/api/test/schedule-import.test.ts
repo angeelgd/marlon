@@ -19,10 +19,16 @@ describe("importación del horario desde el chat (proveedor de prueba)", () => {
     expect(res.preview?.status).toBe("confirmed");
     expect(res.preview?.shifts.map((s) => s.date)).toEqual(["2026-11-02", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-08"]);
     expect(res.preview?.daysOff).toEqual(["2026-11-03", "2026-11-07"]);
-    expect(res.changeIds).toHaveLength(5);
+    // 5 turnos y, como hay horario nuevo, el gimnasio de esa semana reajustado.
+    const ctx0 = testCtx(env, NOW);
+    const gyms = await ctx0.calendar.listByKeyPrefix("gym:");
+    expect(gyms.length).toBeGreaterThanOrEqual(3);
+    expect(res.changeIds).toHaveLength(5 + gyms.length);
 
     const ctx = testCtx(env, NOW);
-    const events = await ctx.calendar.list(localToUtcIso("2026-11-02T00:00", TZ), localToUtcIso("2026-11-09T00:00", TZ));
+    const events = (await ctx.calendar.list(localToUtcIso("2026-11-02T00:00", TZ), localToUtcIso("2026-11-09T00:00", TZ))).filter(
+      (e) => e.kind === "work_planned",
+    );
     expect(events.map((e) => `${toLocalIso(Date.parse(e.start), TZ)} ${toLocalIso(Date.parse(e.end), TZ)}`)).toEqual([
       "2026-11-02T15:45 2026-11-02T22:00",
       "2026-11-04T16:00 2026-11-04T22:00",
@@ -38,7 +44,7 @@ describe("importación del horario desde el chat (proveedor de prueba)", () => {
     const imgs = await env.DB.prepare(`SELECT COUNT(*) AS n FROM pending_images`).first<{ n: number }>();
     expect(imgs?.n).toBe(0);
 
-    // Deshacer el grupo entero.
+    // Deshacer el grupo entero (turnos y gimnasio).
     await ctx.calendar.undo(res.changeIds[0]!);
     expect(await ctx.calendar.list(localToUtcIso("2026-11-02T00:00", TZ), localToUtcIso("2026-11-09T00:00", TZ))).toEqual([]);
   });

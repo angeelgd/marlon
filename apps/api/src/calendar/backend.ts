@@ -26,8 +26,17 @@ export interface ChangesPage {
   nextSyncToken: string | null;
 }
 
+export type BatchOp =
+  | { op: "insert"; ev: EventInput }
+  | { op: "patch"; id: string; ev: Partial<EventInput> }
+  | { op: "remove"; id: string };
+
+export type BatchResult = { ok: true; event: RemoteEvent | null } | { ok: false; error: string };
+
 export interface CalendarBackend {
   readonly kind: "google" | "local";
+  /** Varias operaciones de una vez (en Google, una sola subpetición por cada 50). */
+  batch(ops: BatchOp[]): Promise<BatchResult[]>;
   insert(ev: EventInput): Promise<RemoteEvent>;
   patch(id: string, ev: Partial<EventInput>): Promise<RemoteEvent>;
   remove(id: string): Promise<void>;
@@ -50,8 +59,29 @@ export class GoogleAuthError extends Error {
 /* Sirve para desarrollar y para probar la app sin credenciales.       */
 /* ------------------------------------------------------------------ */
 
+/** Ejecuta un lote operación a operación (backend local y respaldo). */
+async function sequentialBatch(b: CalendarBackend, ops: BatchOp[]): Promise<BatchResult[]> {
+  const out: BatchResult[] = [];
+  for (const o of ops) {
+    try {
+      if (o.op === "insert") out.push({ ok: true, event: await b.insert(o.ev) });
+      else if (o.op === "patch") out.push({ ok: true, event: await b.patch(o.id, o.ev) });
+      else {
+        await b.remove(o.id);
+        out.push({ ok: true, event: null });
+      }
+    } catch (err) {
+      out.push({ ok: false, error: (err as Error).message });
+    }
+  }
+  return out;
+}
+
 export class LocalBackend implements CalendarBackend {
   readonly kind = "local" as const;
+  batch(ops: BatchOp[]): Promise<BatchResult[]> {
+    return sequentialBatch(this, ops);
+  }
   async insert(ev: EventInput): Promise<RemoteEvent> {
     return { ...ev, id: newId("local") };
   }
@@ -170,6 +200,73 @@ export class GoogleBackend implements CalendarBackend {
     };
   }
 
+  /**
+   * Petición batch de Google Calendar (multipart/mixed, máx. 50 por lote).
+   * https://developers.google.com/calendar/api/guides/batch
+   */
+  async batch(ops: BatchOp[]): Promise<BatchResult[]> {
+    const out: BatchResult[] = [];
+    for (let i = 0; i < ops.length; i += 50) {
+      out.push(...(await this.batchChunk(ops.slice(i, i + 50))));
+    }
+    return out;
+  }
+
+  private async batchChunk(ops: BatchOp[]): Promise<BatchResult[]> {
+    if (ops.length === 0) return [];
+    const boundary = `batch_${crypto.randomUUID().replace(/-/g, "")}`;
+    const base = `/calendar/v3/calendars/${encodeURIComponent(this.calendarId)}/events`;
+    const parts = ops.map((o, i) => {
+      let line: string;
+      let body = "";
+      if (o.op === "insert") {
+        line = `POST ${base}`;
+        body = JSON.stringify(this.toGoogle(o.ev));
+      } else if (o.op === "patch") {
+        line = `PATCH ${base}/${encodeURIComponent(o.id)}`;
+        body = JSON.stringify(this.toGoogle(o.ev));
+      } else {
+        line = `DELETE ${base}/${encodeURIComponent(o.id)}`;
+      }
+      return [
+        `--${boundary}`,
+        "Content-Type: application/http",
+        `Content-ID: <item${i}>`,
+        "",
+        `${line} HTTP/1.1`,
+        ...(body ? ["Content-Type: application/json", "", body] : [""]),
+      ].join("\r\n");
+    });
+    const payload = `${parts.join("\r\n")}\r\n--${boundary}--`;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await this.accessToken(attempt > 0);
+      const res = await this.fetchImpl("https://www.googleapis.com/batch/calendar/v3", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": `multipart/mixed; boundary=${boundary}` },
+        body: payload,
+      });
+      if (res.status === 401 && attempt === 0) continue;
+      if (!res.ok) throw new Error(`Google Calendar (batch) respondió ${res.status}.`);
+      const parsed = parseBatchResponse(res.headers.get("content-type") ?? "", await res.text());
+      return ops.map((o, i) => {
+        const r = parsed.get(i);
+        if (!r) return { ok: false, error: "Sin respuesta en el lote." };
+        const gone = o.op === "remove" && (r.status === 404 || r.status === 410);
+        if ((r.status < 200 || r.status >= 300) && !gone) {
+          return { ok: false, error: `HTTP ${r.status}: ${r.body.slice(0, 200)}` };
+        }
+        if (o.op === "remove" || !r.body.trim()) return { ok: true, event: null };
+        try {
+          return { ok: true, event: this.fromGoogle(JSON.parse(r.body) as GEvent) };
+        } catch {
+          return { ok: false, error: "Respuesta del lote ilegible." };
+        }
+      });
+    }
+    throw new GoogleAuthError();
+  }
+
   async insert(ev: EventInput): Promise<RemoteEvent> {
     const g = await this.request<GEvent>("POST", "/events", this.toGoogle(ev));
     return this.fromGoogle(g);
@@ -205,6 +302,26 @@ export class GoogleBackend implements CalendarBackend {
     } while (pageToken);
     return { events, nextSyncToken };
   }
+}
+
+/** Lee una respuesta multipart/mixed de la API batch. Devuelve status y cuerpo por índice. */
+export function parseBatchResponse(contentType: string, text: string): Map<number, { status: number; body: string }> {
+  const m = /boundary="?([^";]+)"?/i.exec(contentType);
+  const out = new Map<number, { status: number; body: string }>();
+  if (!m) return out;
+  const chunks = text.split(`--${m[1]}`);
+  chunks.forEach((chunk, order) => {
+    if (!chunk.trim() || chunk.trim() === "--") return;
+    const idMatch = /Content-ID:\s*<?response-item(\d+)>?/i.exec(chunk);
+    const statusMatch = /HTTP\/1\.1\s+(\d{3})/.exec(chunk);
+    if (!statusMatch) return;
+    const afterStatus = chunk.slice(statusMatch.index);
+    const sep = afterStatus.search(/\r?\n\r?\n/);
+    const body = sep === -1 ? "" : afterStatus.slice(sep).trim();
+    const index = idMatch ? Number(idMatch[1]) : order - 1;
+    out.set(index, { status: Number(statusMatch[1]), body });
+  });
+  return out;
 }
 
 export function createBackend(env: Env, calendarId: string, tz: string): CalendarBackend {

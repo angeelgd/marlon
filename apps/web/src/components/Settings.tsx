@@ -1,5 +1,7 @@
 import type { Settings as S } from "@marlon/shared";
 import { useState } from "react";
+import type { PushState } from "../lib/push";
+import { MemoryEditor } from "./MemoryEditor";
 
 interface Props {
   settings: S;
@@ -7,9 +9,25 @@ interface Props {
   onSave(patch: Partial<S>): Promise<void>;
   onClose(): void;
   onLogout(): void;
+  /** Acciones rápidas; devuelven un texto para mostrar. */
+  onSyncUniversity(): Promise<string>;
+  onReplanGym(): Promise<string>;
+  push: PushState;
+  onEnablePush(): Promise<string>;
+  onDisablePush(): Promise<string>;
+  onTestPush(): Promise<string>;
 }
 
-export function Settings({ settings, calendarBackend, onSave, onClose, onLogout }: Props) {
+const PUSH_TEXT: Record<PushState, string> = {
+  on: "Activadas en este dispositivo.",
+  off: "Desactivadas.",
+  denied: "Bloqueadas. Actívalas en Ajustes del iPhone > Notificaciones > Marlon.",
+  "needs-install": "En el iPhone solo funcionan con Marlon instalado: Safari > Compartir > Añadir a pantalla de inicio, y ábrelo desde el icono.",
+  unsupported: "Este navegador no admite notificaciones push.",
+};
+
+export function Settings(props: Props) {
+  const { settings, calendarBackend, onSave, onClose, onLogout, onSyncUniversity, onReplanGym, push } = props;
   const [draft, setDraft] = useState<S>(settings);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -18,6 +36,27 @@ export function Settings({ settings, calendarBackend, onSave, onClose, onLogout 
     value: draft[key] as string,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDraft({ ...draft, [key]: e.target.value }),
   });
+  const num = <K extends keyof S>(key: K, opts: { min?: number; max?: number; step?: number } = {}) => ({
+    type: "number",
+    inputMode: "decimal" as const,
+    value: String(draft[key]),
+    min: opts.min,
+    max: opts.max,
+    step: opts.step ?? 1,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDraft({ ...draft, [key]: Number(e.target.value) }),
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const action = async (name: string, fn: () => Promise<string>) => {
+    setBusy(name);
+    setMsg(null);
+    try {
+      setMsg(await fn());
+    } catch (err) {
+      setMsg((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
   const check = <K extends keyof S>(key: K) => ({
     checked: draft[key] as boolean,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDraft({ ...draft, [key]: e.target.checked }),
@@ -82,6 +121,129 @@ export function Settings({ settings, calendarBackend, onSave, onClose, onLogout 
           <label>Trabajo<input {...field("workLocation")} autoComplete="off" /></label>
           <label>Universidad<input {...field("universityAddress")} autoComplete="off" /></label>
           <label>Gimnasio<input {...field("gymAddress")} autoComplete="off" /></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Sueño y rutina</legend>
+          <div className="row2">
+            <label>Horas de sueño (mín. 8)<input {...num("sleepHours", { min: 8, max: 12, step: 0.5 })} /></label>
+            <label>Levantarse en días libres<input type="time" {...field("freeDayWake")} required /></label>
+            <label>Rutina de mañana (min)<input {...num("morningRoutineMin", { min: 0, max: 180 })} /></label>
+            <label>Relajarse antes de dormir (min)<input {...num("windDownMin", { min: 0, max: 180 })} /></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Gimnasio</legend>
+          <div className="row2">
+            <label>Sesiones mínimas<input {...num("gymSessionsMin", { min: 0, max: 7 })} /></label>
+            <label>Sesiones máximas<input {...num("gymSessionsMax", { min: 0, max: 7 })} /></label>
+            <label>Bloque mínimo (min)<input {...num("gymBlockMinMin", { min: 30, max: 300 })} /></label>
+            <label>Bloque máximo (min)<input {...num("gymBlockMaxMin", { min: 30, max: 300 })} /></label>
+            <label>Trayecto cada vía (min)<input {...num("gymTravelMin", { min: 0, max: 60 })} /></label>
+            <label>Tras el gimnasio (min)<input {...num("gymAfterMin", { min: 0, max: 120 })} /></label>
+          </div>
+          <label className="row">
+            <input type="checkbox" {...check("gymPreferMorning")} />
+            Prefiero ir por la mañana
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Trayectos, bici y tiempo</legend>
+          <div className="row2">
+            <label>Trayecto estimado (min)<input {...num("defaultCommuteMin", { min: 0, max: 180 })} /></label>
+            <label>Llegar antes (min)<input {...num("arrivalMarginMin", { min: 0, max: 60 })} /></label>
+            <label>Bici desde el mes<input {...num("bikeFromMonth", { min: 1, max: 12 })} /></label>
+            <label>Bici hasta el mes<input {...num("bikeToMonth", { min: 1, max: 12 })} /></label>
+            <label>Bici como mucho (min)<input {...num("bikeMaxMin", { min: 5, max: 90 })} /></label>
+            <label>Ciudad<input {...field("cityName")} /></label>
+            <label>Latitud<input {...num("latitude", { min: -90, max: 90, step: 0.0001 })} /></label>
+            <label>Longitud<input {...num("longitude", { min: -180, max: 180, step: 0.0001 })} /></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Resúmenes</legend>
+          <label className="row">
+            <input type="checkbox" {...check("morningBriefing")} />
+            Resumen de buenos días
+          </label>
+          <label className="row">
+            <input type="checkbox" {...check("eveningReview")} />
+            Repaso corto por la noche
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Voz y avisos</legend>
+          <label className="row">
+            <input type="checkbox" {...check("textOnly")} />
+            Modo solo texto (sin voz ni sonido, también en los avisos)
+          </label>
+          <label>
+            Voz de las respuestas
+            <select value={draft.voice} onChange={(e) => setDraft({ ...draft, voice: e.target.value as S["voice"] })}>
+              <option value="browser">La del iPhone (gratis)</option>
+              <option value="provider">La del proveedor (si está configurada)</option>
+            </select>
+          </label>
+          <label className="row">
+            <input type="checkbox" {...check("pendingNudges")} />
+            Insistir con los pendientes del día
+          </label>
+          <div className="row2">
+            <label>Aviso de salida (min antes, 0 = no)<input {...num("leaveReminderMin", { min: 0, max: 60 })} /></label>
+            <label>Repaso antes de dormir (min)<input {...num("eveningReviewLeadMin", { min: 0, max: 180 })} /></label>
+            <label>Cumpleaños, avisar (días antes)<input {...num("birthdayNoticeDays", { min: 0, max: 60 })} /></label>
+          </div>
+          <p className="muted small">Notificaciones: {PUSH_TEXT[push]}</p>
+          <div className="actions-row">
+            {push === "off" && (
+              <button type="button" className="btn small" disabled={busy !== null} onClick={() => action("push", props.onEnablePush)}>
+                Activar notificaciones
+              </button>
+            )}
+            {push === "on" && (
+              <>
+                <button type="button" className="btn ghost small" disabled={busy !== null} onClick={() => action("test", props.onTestPush)}>
+                  Enviar una de prueba
+                </button>
+                <button type="button" className="btn ghost small" disabled={busy !== null} onClick={() => action("push", props.onDisablePush)}>
+                  Desactivar aquí
+                </button>
+              </>
+            )}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Estudio y lectura</legend>
+          <div className="row2">
+            <label>Bloque de estudio (min)<input {...num("studyBlockMin", { min: 15, max: 180 })} /></label>
+            <label>Descanso (proporción)<input {...num("studyBreakRatio", { min: 0.1, max: 0.5, step: 0.05 })} /></label>
+          </div>
+          <label className="row">
+            <input type="checkbox" {...check("readingPrompts")} />
+            Preguntarme por el libro al acabar un trayecto
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Lo que Marlon sabe de ti</legend>
+          <MemoryEditor />
+        </fieldset>
+
+        <fieldset>
+          <legend>Acciones</legend>
+          <div className="actions-row">
+            <button type="button" className="btn ghost small" disabled={busy !== null} onClick={() => action("uni", onSyncUniversity)}>
+              {busy === "uni" ? "Sincronizando…" : "Sincronizar la uni ahora"}
+            </button>
+            <button type="button" className="btn ghost small" disabled={busy !== null} onClick={() => action("gym", onReplanGym)}>
+              {busy === "gym" ? "Planificando…" : "Replanificar gimnasio"}
+            </button>
+          </div>
         </fieldset>
 
         {msg && <p className="muted">{msg}</p>}

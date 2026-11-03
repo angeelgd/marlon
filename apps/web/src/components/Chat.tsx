@@ -3,11 +3,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { prepareImage, type CropRect } from "../lib/image";
 import { PhotoCrop } from "./PhotoCrop";
+import { VoiceButton } from "./VoiceButton";
 
 interface Props {
   messages: UiMessage[];
   sending: boolean;
+  /** Modo solo texto: sin micrófono. */
+  textOnly: boolean;
   onSend(text: string, images: ChatImage[]): Promise<void>;
+  onVoice(wavBase64: string): Promise<void>;
 }
 
 interface Pending {
@@ -16,7 +20,7 @@ interface Pending {
   crop?: CropRect;
 }
 
-export function Chat({ messages, sending, onSend }: Props) {
+export function Chat({ messages, sending, textOnly, onSend, onVoice }: Props) {
   const [text, setText] = useState("");
   const [photo, setPhoto] = useState<Pending | null>(null);
   const [cropping, setCropping] = useState(false);
@@ -74,6 +78,7 @@ export function Chat({ messages, sending, onSend }: Props) {
               transition={{ duration: 0.18 }}
             >
               {m.hasImages && <span className="bubble-attach">📷 Foto adjunta</span>}
+              {m.fromVoice && <span className="bubble-attach">🎙 Nota de voz</span>}
               {m.text && <p>{m.text}</p>}
             </motion.div>
           ))}
@@ -151,9 +156,20 @@ export function Chat({ messages, sending, onSend }: Props) {
             }
           }}
         />
-        <button type="submit" className="send-btn" disabled={sending || (!text.trim() && !photo)} aria-label="Enviar">
-          ↑
-        </button>
+        {!textOnly && !text.trim() && !photo ? (
+          <VoiceButton
+            disabled={sending}
+            onAudio={(b64) => {
+              setError(null);
+              void onVoice(b64);
+            }}
+            onError={setError}
+          />
+        ) : (
+          <button type="submit" className="send-btn" disabled={sending || (!text.trim() && !photo)} aria-label="Enviar">
+            ↑
+          </button>
+        )}
       </form>
 
       {cropping && photo && (

@@ -16,6 +16,7 @@
     "deploy": "pnpm build && pnpm --filter @marlon/api deploy",
     "db:migrate:local": "pnpm --filter @marlon/api db:migrate:local",
     "db:migrate:remote": "pnpm --filter @marlon/api db:migrate:remote",
-    "google:auth": "node --experimental-strip-types scripts/google-auth.ts"
+    "google:auth": "node --experimental-strip-types scripts/google-auth.ts",
+    "vapid:generate": "node --experimental-strip-types scripts/vapid-generate.ts"
   }
 }
