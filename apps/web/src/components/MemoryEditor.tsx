@@ -1,3 +1,4 @@
+import { Pencil, X } from "lucide-react";
 import type { Memory } from "@marlon/shared";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
@@ -51,8 +52,8 @@ export function MemoryEditor() {
               <>
                 <span className="mem-cat">{CATS.find((c) => c.value === m.category)?.label}</span>
                 <span className="mem-text">{m.content}</span>
-                <button type="button" className="icon-btn small-x" aria-label="Editar" onClick={() => (setEditing(m.id), setDraft(m.content))}>✎</button>
-                <button type="button" className="icon-btn small-x" aria-label="Borrar" onClick={() => run(() => api.deleteMemory(m.id))}>✕</button>
+                <button type="button" className="icon-btn sm quiet" aria-label="Editar" onClick={() => (setEditing(m.id), setDraft(m.content))}><Pencil size={15} strokeWidth={1.75} /></button>
+                <button type="button" className="icon-btn sm quiet" aria-label="Borrar" onClick={() => run(() => api.deleteMemory(m.id))}><X size={15} strokeWidth={1.75} /></button>
               </>
             )}
           </li>

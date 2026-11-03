@@ -110,7 +110,7 @@ export async function planNotifications(deps: SchedulerDeps): Promise<number> {
       key: `morning:${today}`,
       kind: "morning",
       at: Math.max(frame.wake, now),
-      title: "Buenos días ☀️",
+      title: "Buenos días",
       body,
       url: `/?say=${encodeURIComponent("buenos días")}`,
     });
@@ -124,7 +124,7 @@ export async function planNotifications(deps: SchedulerDeps): Promise<number> {
         key: `evening:${today}`,
         kind: "evening",
         at: Math.max(at, now),
-        title: "Repaso de la noche 🌙",
+        title: "Repaso de la noche",
         body: `Para dormir 8 horas, a la cama a las ${hhmm(bedTonight, tz)}. Toca para ver lo de mañana.`,
         url: `/?say=${encodeURIComponent("buenas noches")}`,
       });
@@ -173,7 +173,7 @@ export async function planNotifications(deps: SchedulerDeps): Promise<number> {
               key: `reading:${e.id}:${leg}`,
               kind: "reading",
               at: now,
-              title: "📖 ¿Por dónde vas?",
+              title: "¿Por dónde vas con el libro?",
               body: `Fin del trayecto. ¿Por dónde vas en «${book.title}»? Dímelo así: «voy por el 40 %».`,
               url: "/?tab=chat",
             });
@@ -205,7 +205,7 @@ export async function planNotifications(deps: SchedulerDeps): Promise<number> {
         key: `cooking:${today}`,
         kind: "cooking",
         at: now,
-        title: "Ideas de batch cooking 🥦",
+        title: "Ideas de batch cooking",
         body: `Te busco ${s.cookingVideosPerWeek === 1 ? "un vídeo" : "dos vídeos"} de batch cooking vegano para mañana. Toca y te los enseño.`,
         url: `/?say=${encodeURIComponent("Propónme vídeos de batch cooking para esta semana")}`,
       });

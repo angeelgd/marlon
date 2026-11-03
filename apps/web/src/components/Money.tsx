@@ -1,3 +1,4 @@
+import { AlertTriangle, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { CATEGORY_LABELS, formatEuros, type ExpenseCategory, type PayRuleSet, type PayRules, type Settings } from "@marlon/shared";
 import { useCallback, useEffect, useState } from "react";
 import { api, type DayComparison, type MoneyData } from "../lib/api";
@@ -60,16 +61,17 @@ export function Money({ today, onSaveSettings, onToast }: Props) {
   return (
     <section className="money" aria-label="Dinero">
       <header className="month-nav">
-        <button className="icon-btn" onClick={() => setMonth((m) => shiftMonth(m, -1))} aria-label="Mes anterior">‹</button>
+        <button className="icon-btn sm" onClick={() => setMonth((m) => shiftMonth(m, -1))} aria-label="Mes anterior"><ChevronLeft size={18} strokeWidth={1.75} /></button>
         <h2>{monthName(month)}</h2>
-        <button className="icon-btn" onClick={() => setMonth((m) => shiftMonth(m, 1))} aria-label="Mes siguiente">›</button>
+        <button className="icon-btn sm" onClick={() => setMonth((m) => shiftMonth(m, 1))} aria-label="Mes siguiente"><ChevronRight size={18} strokeWidth={1.75} /></button>
       </header>
 
       <div className="card">
-        <h3>Sueldo estimado (bruto)</h3>
-        <div className="kpis">
-          <div><span className="muted small">Horas reales</span><b>{formatEuros(pay.actualCents)}</b><span className="muted small">{pay.actualHours.toLocaleString("es-ES")} h</span></div>
-          <div><span className="muted small">Horario completo</span><b>{formatEuros(pay.plannedCents)}</b><span className="muted small">{pay.plannedHours.toLocaleString("es-ES")} h</span></div>
+        <span className="eyebrow">Sueldo estimado · bruto</span>
+        <p className="hero-amount">{formatEuros(pay.actualCents)}</p>
+        <p className="muted small">{pay.actualHours.toLocaleString("es-ES")} h trabajadas según tus horas reales</p>
+        <div className="kpis two">
+          <div><span className="muted small">Con el horario completo</span><b>{formatEuros(pay.plannedCents)}</b><span className="muted small">{pay.plannedHours.toLocaleString("es-ES")} h</span></div>
           <div><span className="muted small">Diferencia</span><b className={pay.differenceCents < 0 ? "neg" : ""}>{formatEuros(pay.differenceCents)}</b></div>
         </div>
         {pay.unresolved.length > 0 && (
@@ -87,7 +89,7 @@ export function Money({ today, onSaveSettings, onToast }: Props) {
         {pay.toConfirm.length > 0 && (
           <ul className="small muted confirm-list">
             {[...new Map(pay.toConfirm.map((t) => [`${t.date}${t.reason}`, t])).values()].map((t) => (
-              <li key={`${t.date}${t.reason}`}>⚠ {dayName(t.date)}: {t.reason}</li>
+              <li key={`${t.date}${t.reason}`}><AlertTriangle size={14} strokeWidth={1.75} /> <span>{dayName(t.date)}: {t.reason}</span></li>
             ))}
           </ul>
         )}
@@ -156,7 +158,7 @@ export function Money({ today, onSaveSettings, onToast }: Props) {
                 <span className="muted small"> {dayName(e.date)} · {CATEGORY_LABELS[e.category]}{e.source === "receipt" ? " · ticket" : ""}</span>
               </div>
               <span>{formatEuros(e.amountCents)}</span>
-              <button className="icon-btn small-x" aria-label="Borrar gasto" onClick={() => act(() => api.deleteExpense(e.id), "Gasto borrado")}>✕</button>
+              <button className="icon-btn sm quiet" aria-label="Borrar gasto" onClick={() => act(() => api.deleteExpense(e.id), "Gasto borrado")}><X size={15} strokeWidth={1.75} /></button>
             </li>
           ))}
         </ul>
@@ -172,7 +174,7 @@ export function Money({ today, onSaveSettings, onToast }: Props) {
                 <span className="muted small"> {b.kind === "income" ? "ingreso" : b.bucket === "wants" ? "fijo, capricho" : "fijo, necesidad"}</span>
               </div>
               <span>{formatEuros(b.amountCents)}/mes</span>
-              <button className="icon-btn small-x" aria-label="Borrar" onClick={() => act(() => api.deleteBudget(b.id))}>✕</button>
+              <button className="icon-btn sm quiet" aria-label="Borrar" onClick={() => act(() => api.deleteBudget(b.id))}><X size={15} strokeWidth={1.75} /></button>
             </li>
           ))}
         </ul>

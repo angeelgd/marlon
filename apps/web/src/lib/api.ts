@@ -72,6 +72,14 @@ export const api = {
 
   syncUniversity: () =>
     post<{ created: number; changed: number; removed: number; unchanged: number; conflicts: unknown[] }>("/university/sync"),
+  universityLink: () => request<UniversityLink>("/university/link"),
+  saveUniversityLink: (url: string) =>
+    request<UniversityLink & { sync: { created: number; changed: number; removed: number; unchanged: number; conflicts: unknown[] } }>(
+      "/university/link",
+      { method: "PUT", body: JSON.stringify({ url }) },
+    ),
+  deleteUniversityLink: () =>
+    request<UniversityLink>("/university/link", { method: "DELETE", headers: { "content-type": "application/json" } }),
   replanGym: () =>
     post<{ sessions: { start: string; end: string }[]; created: number; changed: number; removed: number; belowTarget: boolean }>(
       "/gym/replan",
@@ -127,6 +135,13 @@ export const api = {
   saveSettings: (patch: Partial<Settings>) =>
     request<{ settings: Settings }>("/settings", { method: "PUT", body: JSON.stringify(patch) }),
 };
+
+export interface UniversityLink {
+  configured: boolean;
+  /** "secret": fijado en Cloudflare; "app": guardado desde Ajustes. */
+  source: "secret" | "app" | null;
+  host: string | null;
+}
 
 export interface DayComparison {
   date: string;

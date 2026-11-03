@@ -46,7 +46,7 @@ export function nudgeText(title: string, index: number, overdue: boolean): { tit
     { title: "Recuerda", body: `${t}.` },
     { title: "¿Qué tal?", body: `¿Pudiste ${lt}? Si ya está, dímelo y lo quito.` },
     { title: "Sigue pendiente", body: `Sigue pendiente: ${lt}. ¿Te lo quitas de encima ahora?` },
-    { title: "Una vez más", body: `Te lo recuerdo otra vez, sin agobios: ${lt} 🙂` },
+    { title: "Una vez más", body: `Te lo recuerdo otra vez, sin agobios: ${lt}` },
     { title: "Casi acabando el día", body: `Antes de que acabe el día: ${lt}.` },
     { title: "Último aviso de hoy", body: `Último aviso de hoy: ${lt}. Si ya está, dímelo y lo cierro.` },
   ];
@@ -113,7 +113,7 @@ export function birthdayNotices(
     out.push({
       key: `birthday:${p.id}:${p.due_date}:day`,
       at: frame.wake + 30 * 60_000,
-      title: "Hoy es su cumpleaños 🎂",
+      title: "Hoy es su cumpleaños",
       body: `Hoy cumple años ${who}. ¿Le escribes?`,
     });
   }

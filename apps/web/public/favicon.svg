@@ -1,5 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0f1115"/>
-  <circle cx="256" cy="256" r="176" fill="#1d2230"/>
-  <path d="M150 352V170l106 118 106-118v182" fill="none" stroke="#7cc4a4" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <defs>
+    <radialGradient id="g" cx="30%" cy="15%" r="110%">
+      <stop offset="0" stop-color="#2a2824"/>
+      <stop offset="0.6" stop-color="#141412"/>
+      <stop offset="1" stop-color="#0d0d0c"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <text x="256" y="378" text-anchor="middle" font-family="'Instrument Serif','Iowan Old Style','Times New Roman',Georgia,serif" font-size="360" fill="#d8bb85">M</text>
 </svg>

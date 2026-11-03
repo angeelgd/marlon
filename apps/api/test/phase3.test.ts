@@ -53,7 +53,7 @@ describe("planificador de notificaciones", () => {
     expect(await planNotifications(deps)).toBe(1);
     expect(await planNotifications(deps)).toBe(0);
     const n = await env.DB.prepare(`SELECT * FROM notifications`).first<{ kind: string; title: string; body: string; url: string }>();
-    expect(n).toMatchObject({ kind: "morning", title: "Buenos días ☀️" });
+    expect(n).toMatchObject({ kind: "morning", title: "Buenos días" });
     expect(n!.body).toBe("Hoy empiezas con Trabajo a las 15:45. 1 °C y nieve débil. Toca para ver tu día.");
     expect(decodeURIComponent(n!.url)).toBe("/?say=buenos días");
   });

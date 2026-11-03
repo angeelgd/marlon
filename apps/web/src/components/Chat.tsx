@@ -1,5 +1,6 @@
 import type { ChatImage, UiMessage } from "@marlon/shared";
 import { AnimatePresence, motion } from "framer-motion";
+import { ArrowUp, CalendarClock, Camera, Dumbbell, Image as ImageIcon, Mic, Paperclip, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { prepareImage, type CropRect } from "../lib/image";
 import { PhotoCrop } from "./PhotoCrop";
@@ -18,6 +19,11 @@ interface Pending {
   file: File;
   url: string;
   crop?: CropRect;
+}
+
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 6 ? "Buenas noches" : h < 14 ? "Buenos días" : h < 21 ? "Buenas tardes" : "Buenas noches";
 }
 
 export function Chat({ messages, sending, textOnly, onSend, onVoice }: Props) {
@@ -64,8 +70,22 @@ export function Chat({ messages, sending, textOnly, onSend, onVoice }: Props) {
       <div className="chat-list" ref={listRef}>
         {messages.length === 0 && (
           <div className="chat-empty">
-            <p>Hola Ángel 👋</p>
-            <p>Mándame la foto de tu horario o dime qué quieres organizar.</p>
+            <h3>{greeting()}, Ángel</h3>
+            <p>Dime qué quieres organizar o mándame la foto de tu horario.</p>
+            <div className="suggestions">
+              <button className="suggestion" onClick={() => fileRef.current?.click()}>
+                <Camera size={18} strokeWidth={1.75} /> Leer la foto de mi horario
+              </button>
+              <button className="suggestion" onClick={() => send("¿Qué tengo hoy?")}>
+                <Sun size={18} strokeWidth={1.75} /> ¿Qué tengo hoy?
+              </button>
+              <button className="suggestion" onClick={() => send("Planifica el gimnasio de esta semana")}>
+                <Dumbbell size={18} strokeWidth={1.75} /> Planificar el gimnasio de la semana
+              </button>
+              <button className="suggestion" onClick={() => send("¿Cuándo tengo un hueco libre mañana?")}>
+                <CalendarClock size={18} strokeWidth={1.75} /> Buscar un hueco libre mañana
+              </button>
+            </div>
           </div>
         )}
         <AnimatePresence initial={false}>
@@ -77,8 +97,16 @@ export function Chat({ messages, sending, textOnly, onSend, onVoice }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.18 }}
             >
-              {m.hasImages && <span className="bubble-attach">📷 Foto adjunta</span>}
-              {m.fromVoice && <span className="bubble-attach">🎙 Nota de voz</span>}
+              {m.hasImages && (
+                <span className="bubble-attach">
+                  <ImageIcon size={14} strokeWidth={1.75} /> Foto adjunta
+                </span>
+              )}
+              {m.fromVoice && (
+                <span className="bubble-attach">
+                  <Mic size={14} strokeWidth={1.75} /> Nota de voz
+                </span>
+              )}
               {m.text && <p>{m.text}</p>}
             </motion.div>
           ))}
@@ -126,8 +154,9 @@ export function Chat({ messages, sending, textOnly, onSend, onVoice }: Props) {
           void send(text);
         }}
       >
-        <button type="button" className="icon-btn" onClick={() => fileRef.current?.click()} aria-label="Adjuntar foto">
-          📷
+        <div className="composer-box">
+        <button type="button" className="icon-btn quiet" onClick={() => fileRef.current?.click()} aria-label="Adjuntar foto">
+          <Paperclip size={20} strokeWidth={1.75} />
         </button>
         <input
           ref={fileRef}
@@ -144,7 +173,7 @@ export function Chat({ messages, sending, textOnly, onSend, onVoice }: Props) {
           ref={inputRef}
           rows={1}
           value={text}
-          placeholder={photo ? "Este es mi horario…" : "Escribe a Marlon…"}
+          placeholder={photo ? "Este es mi horario…" : "Escribe a Marlon"}
           onChange={(e) => {
             setText(e.target.value);
             autosize(e.target);
@@ -167,9 +196,10 @@ export function Chat({ messages, sending, textOnly, onSend, onVoice }: Props) {
           />
         ) : (
           <button type="submit" className="send-btn" disabled={sending || (!text.trim() && !photo)} aria-label="Enviar">
-            ↑
+            <ArrowUp size={19} strokeWidth={2.25} />
           </button>
         )}
+        </div>
       </form>
 
       {cropping && photo && (

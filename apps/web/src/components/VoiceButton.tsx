@@ -1,3 +1,4 @@
+import { Loader2, Mic } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MAX_SECONDS, startRecording, type Recording } from "../lib/recorder";
 import { stopSpeaking, unlockSpeech } from "../lib/speech";
@@ -101,7 +102,7 @@ export function VoiceButton({ disabled, onAudio, onError }: Props) {
         }}
         onContextMenu={(e) => e.preventDefault()}
       >
-        {state === "processing" ? "…" : "🎙"}
+        {state === "processing" ? <Loader2 size={18} className="spin" /> : <Mic size={19} strokeWidth={2} />}
       </button>
     </>
   );

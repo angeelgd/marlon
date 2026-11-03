@@ -77,7 +77,7 @@ export function phaseNotifications(
   out.push({
     key: `timer:${session.id}:${epoch}:end`,
     at: t,
-    title: session.kind === "meditation" ? "Fin de la meditación 🙏" : "¡Terminado! 🎉",
+    title: session.kind === "meditation" ? "Fin de la meditación" : "Sesión completada",
     body: session.kind === "timer" ? `${session.title}: completado.` : session.title,
   });
   return out;

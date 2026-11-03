@@ -118,7 +118,7 @@ describe("cumpleaños", () => {
     expect(before).toHaveLength(1);
     expect(before[0]!.body).toBe("El cumpleaños de Laura es dentro de 7 días. ¿Quieres preparar algo?");
     const day = birthdayNotices({ ...p, due_date: "2026-11-02" }, frame, 7);
-    expect(day[0]!.title).toBe("Hoy es su cumpleaños 🎂");
+    expect(day[0]!.title).toBe("Hoy es su cumpleaños");
   });
 });
 

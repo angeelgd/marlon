@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { sessionPosition, type WellbeingSession } from "@marlon/shared";
 import { useEffect, useRef, useState } from "react";
 import { endChime, phaseBeep } from "../lib/sound";
@@ -97,7 +98,7 @@ export function SessionPlayer({ session, textOnly, voice, onPause, onResume, onS
     <div className={`session ${session.kind} ${phase?.kind ?? "done"}`} role="dialog" aria-label={session.title}>
       <header>
         <span className="muted small">{session.title}</span>
-        <button className="icon-btn" onClick={() => setMinimized(true)} aria-label="Minimizar">⌄</button>
+        <button className="icon-btn" onClick={() => setMinimized(true)} aria-label="Minimizar"><ChevronDown size={20} strokeWidth={1.75} /></button>
       </header>
       <div className="session-main">
         {phase ? (
@@ -109,8 +110,8 @@ export function SessionPlayer({ session, textOnly, voice, onPause, onResume, onS
           </>
         ) : (
           <>
-            <p className="session-time">🎉</p>
-            <p className="session-phase">¡Terminado!</p>
+            <p className="session-phase">Sesión completada</p>
+            <p className="session-time session-done">Hecho</p>
           </>
         )}
       </div>

@@ -1,4 +1,5 @@
 import type { Book } from "@marlon/shared";
+import { Star } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type ReadingData } from "../lib/api";
 
@@ -9,7 +10,16 @@ interface Props {
 }
 
 const fmtDate = (d: string) => new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${d}T12:00:00Z`));
-const stars = (n: number | null) => (n ? "★".repeat(n) + "☆".repeat(5 - n) : "");
+function Stars({ n }: { n: number | null }) {
+  if (!n) return null;
+  return (
+    <span className="stars" aria-label={`${n} de 5`}>
+      {Array.from({ length: 5 }, (_, i) => (
+        <Star key={i} size={12} strokeWidth={1.5} fill={i < n ? "currentColor" : "none"} />
+      ))}
+    </span>
+  );
+}
 
 export function Wellbeing({ onStart, onAsk, onToast }: Props) {
   const [data, setData] = useState<ReadingData | null>(null);
@@ -31,11 +41,14 @@ export function Wellbeing({ onStart, onAsk, onToast }: Props) {
   return (
     <section className="wellbeing" aria-label="Bienestar">
       <div className="card">
-        <h3>Para un respiro</h3>
-        <div className="actions-row">
-          <button className="btn small" onClick={() => onStart("meditation", 3)}>Meditar 3 min</button>
-          <button className="btn small" onClick={() => onStart("meditation", 5)}>5 min</button>
-          <button className="btn small" onClick={() => onStart("meditation", 10)}>10 min</button>
+        <h3>Meditación guiada</h3>
+        <div className="tiles">
+          {[3, 5, 10].map((m) => (
+            <button key={m} className="tile" onClick={() => onStart("meditation", m)}>
+              <b>{m}</b>
+              minutos
+            </button>
+          ))}
         </div>
         <div className="actions-row">
           <button className="btn ghost small" onClick={() => onStart("stretch", "post_gym")}>Estirar tras el gimnasio</button>
@@ -80,7 +93,7 @@ export function Wellbeing({ onStart, onAsk, onToast }: Props) {
           <ul className="recipe-list">
             {past.map((b) => (
               <li key={b.id}>
-                <span>{b.title}</span> <span className="stars">{stars(b.rating)}</span>
+                <span>{b.title}</span><Stars n={b.rating} />
                 {b.status === "abandoned" && <span className="muted small"> · abandonado</span>}
                 {b.opinion && <p className="small muted">“{b.opinion}”</p>}
               </li>
