@@ -257,7 +257,8 @@ Cloudflare se conecta al repositorio y despliega solo cada vez que cambia `main`
    - Carpeta raíz (*Root directory*): `/`.
    - Comando de build: `pnpm build`.
    - Comando de despliegue: `pnpm --filter @marlon/api run deploy:ci`.
-   - Variable de build (*Build variables*): `NODE_VERSION` = `22`.
+   - Rama de producción (*Settings > Build > Branch control*): `main`. También tiene que ser la rama por defecto en GitHub.
+   - Versión de Node: la fija el archivo `.node-version` (22); no hace falta variable de build.
 3. **Secretos:** en el Worker, *Settings > Variables and Secrets*, añade como tipo **Secret** al menos `LLM_API_KEY`, `SESSION_SECRET` y `SETUP_TOKEN`. Los demás de `.env.example` se añaden igual cuando los necesites. Los despliegues no los borran.
 4. **Relanzar:** en *Deployments*, vuelve a desplegar para que el Worker arranque con los secretos. La dirección será del tipo `https://marlon.<tu-subdominio>.workers.dev`.
 
