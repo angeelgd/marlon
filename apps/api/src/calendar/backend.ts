@@ -119,7 +119,8 @@ export class GoogleBackend implements CalendarBackend {
     private readonly env: Env,
     private readonly calendarId: string,
     private readonly tz: string,
-    private readonly fetchImpl: typeof fetch = fetch,
+    // Envuelta: en Workers, fetch llamado como método de otro objeto lanza "Illegal invocation".
+    private readonly fetchImpl: typeof fetch = ((input, init) => fetch(input, init)) as typeof fetch,
   ) {}
 
   private async accessToken(force = false): Promise<string> {
