@@ -106,6 +106,14 @@ export const SettingsSchema = z.object({
   cookingWeekday: z.number().int().min(0).max(6).default(0),
   /** Ideas de batch cooking a la semana (1 o 2). */
   cookingVideosPerWeek: z.number().int().min(0).max(2).default(2),
+
+  /* ---- Fase 5: bienestar y lectura ---- */
+  /** Bloque de estudio por defecto (minutos). */
+  studyBlockMin: z.number().int().min(15).max(180).default(50),
+  /** Descanso proporcional al bloque (0.2 = 10 min por cada 50). */
+  studyBreakRatio: z.number().min(0.1).max(0.5).default(0.2),
+  /** Preguntar por el libro al acabar un trayecto en bus. */
+  readingPrompts: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
@@ -231,6 +239,8 @@ export interface ChatResponse {
   notice?: string;
   /** Transcripción de la nota de voz, si la hubo. */
   transcript?: string;
+  /** Sesión de bienestar que hay que abrir (temporizador, meditación, estiramientos). */
+  session?: WellbeingSession;
 }
 
 /* ------------------------------------------------------------------ */
@@ -357,4 +367,67 @@ export function formatEuros(cents: number, decimals = 2): string {
     maximumFractionDigits: decimals,
     useGrouping: true,
   }).format(cents / 100);
+}
+
+/* ------------------------------------------------------------------ */
+/* Bienestar: temporizadores, meditación y estiramientos               */
+/* ------------------------------------------------------------------ */
+
+export interface SessionPhase {
+  label: string;
+  seconds: number;
+  kind: "work" | "rest" | "step";
+  /** Texto guiado (meditación, estiramientos) que se lee en voz alta si hay voz. */
+  text?: string;
+}
+
+export interface WellbeingSession {
+  id: string;
+  kind: "timer" | "meditation" | "stretch";
+  title: string;
+  phases: SessionPhase[];
+  /** Instante (ISO) en que empezó la fase 0, descontando pausas. */
+  startedAt: string;
+  status: "running" | "paused" | "done" | "cancelled";
+  /** Si está en pausa, segundos ya transcurridos. */
+  elapsedAtPause: number | null;
+}
+
+/** Fase actual y segundos que le quedan. null si ya ha terminado. */
+export function sessionPosition(
+  phases: SessionPhase[],
+  elapsedSeconds: number,
+): { index: number; remaining: number; phaseElapsed: number } | null {
+  let t = elapsedSeconds;
+  for (let i = 0; i < phases.length; i++) {
+    const p = phases[i]!;
+    if (t < p.seconds) return { index: i, remaining: p.seconds - t, phaseElapsed: t };
+    t -= p.seconds;
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lectura y memoria                                                   */
+/* ------------------------------------------------------------------ */
+
+export interface Book {
+  id: string;
+  title: string;
+  author: string | null;
+  genre: string | null;
+  status: "reading" | "finished" | "abandoned";
+  percent: number;
+  startedAt: string;
+  finishedAt: string | null;
+  rating: number | null;
+  opinion: string | null;
+}
+
+export interface Memory {
+  id: string;
+  content: string;
+  category: "preference" | "routine" | "person" | "health" | "reading" | "other";
+  createdAt: string;
+  updatedAt: string;
 }

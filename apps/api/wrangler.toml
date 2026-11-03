@@ -6,6 +6,12 @@ compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
 
 # La PWA compilada se sirve desde el mismo Worker (mismo origen que la API).
+# La base de conocimiento (apps/api/knowledge/*.md) se empaqueta como texto.
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
@@ -27,3 +33,12 @@ crons = ["*/5 * * * *", "7 */3 * * *"]
 LLM_PROVIDER = "openai-compatible"
 LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 LLM_MODEL = "gemini-2.5-flash"
+
+# Despachador preciso de avisos (alarmas de Durable Object, plan gratuito con SQLite).
+[[durable_objects.bindings]]
+name = "SCHEDULER"
+class_name = "NotificationScheduler"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["NotificationScheduler"]

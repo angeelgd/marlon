@@ -4,12 +4,14 @@ import type { Env } from "../env";
 import { newId } from "../lib/ids";
 import { addDays, localToMs, localToUtcIso, toLocalIso, toLocalParts, weekdayOf } from "../lib/time";
 import { expiringRuleSet, listRuleSets } from "../money/payroll";
+import { currentBook } from "../reading/books";
 import { planDeparture } from "../integrations/routes";
 import { getForecast, weatherAt } from "../integrations/weather";
 import { birthdayNotices, nextNudge, type DayFrame } from "../pendings/nudges";
 import { listPendingRows, recordNudge } from "../pendings/store";
 import { planSleep, toCommitments, type Gym } from "../planning/sleep";
 import { sendPush, type KeyPairB64 } from "./webpush";
+import { pokeScheduler } from "./poke";
 
 /**
  * Notificaciones programadas. El cron (cada 5 min) llama a planNotifications,
@@ -33,6 +35,14 @@ export interface QueuedNotification {
   title: string;
   body: string;
   url?: string;
+}
+
+/** Próximo aviso pendiente (ms), para programar la alarma del Durable Object. */
+export async function nextPendingAt(db: D1Database): Promise<number | null> {
+  const r = await db
+    .prepare(`SELECT MIN(send_at) AS at FROM notifications WHERE status = 'pending'`)
+    .first<{ at: string | null }>();
+  return r?.at ? Date.parse(r.at) : null;
 }
 
 export async function enqueue(db: D1Database, n: QueuedNotification): Promise<boolean> {
@@ -143,6 +153,36 @@ export async function planNotifications(deps: SchedulerDeps): Promise<number> {
     }
   }
 
+  // Lectura: al acabar un trayecto en bus (llegada a un turno o clase, o vuelta a casa),
+  // si no ha dicho por dónde va, se le pregunta.
+  if (s.readingPrompts) {
+    const book = await currentBook(db);
+    if (book) {
+      const lastLog = await db
+        .prepare(`SELECT MAX(logged_at) AS at FROM reading_logs WHERE book_id = ?`)
+        .bind(book.id)
+        .first<{ at: string | null }>();
+      const lastAt = lastLog?.at ? Date.parse(lastLog.at) : 0;
+      const trip = s.defaultCommuteMin * 60_000;
+      for (const e of todays.filter((x) => x.kind === "work_planned" || x.kind === "university")) {
+        const arrive = Date.parse(e.start) - s.arrivalMarginMin * 60_000;
+        const home = Date.parse(e.end) + trip;
+        for (const [leg, at] of [["out", arrive], ["back", home]] as const) {
+          if (now >= at && now < at + 20 * 60_000 && lastAt < at - trip - 15 * 60_000) {
+            await add({
+              key: `reading:${e.id}:${leg}`,
+              kind: "reading",
+              at: now,
+              title: "📖 ¿Por dónde vas?",
+              body: `Fin del trayecto. ¿Por dónde vas en «${book.title}»? Dímelo así: «voy por el 40 %».`,
+              url: "/?tab=chat",
+            });
+          }
+        }
+      }
+    }
+  }
+
   // 4. Tabla de sueldos a punto de caducar (un mes antes) sin otra que la siga.
   const expiring = expiringRuleSet(await listRuleSets(db), today);
   if (expiring && now >= frame.wake + 60 * 60_000) {
@@ -197,6 +237,7 @@ export async function planNotifications(deps: SchedulerDeps): Promise<number> {
       }
     }
   }
+  if (queued > 0) await pokeScheduler(deps.env);
   return queued;
 }
 
@@ -237,6 +278,13 @@ export async function dispatchNotifications(deps: Omit<SchedulerDeps, "calendar"
   let sent = 0;
   let failed = 0;
   for (const n of due) {
+    // Reserva atómica: el cron y el Durable Object pueden despachar a la vez,
+    // pero solo uno consigue incrementar "attempts" desde el valor leído.
+    const claim = await db
+      .prepare(`UPDATE notifications SET attempts = attempts + 1 WHERE id = ? AND status = 'pending' AND attempts = ?`)
+      .bind(n.id, n.attempts)
+      .run();
+    if ((claim.meta.changes ?? 0) !== 1) continue;
     if (!vapid || subs.length === 0) {
       await db.prepare(`UPDATE notifications SET status = 'failed', error = ? WHERE id = ?`)
         .bind(vapid ? "sin suscripciones" : "faltan las claves VAPID", n.id)
@@ -272,13 +320,13 @@ export async function dispatchNotifications(deps: Omit<SchedulerDeps, "calendar"
       }
     }
     if (anyOk) {
-      await db.prepare(`UPDATE notifications SET status = 'sent', sent_at = ?, attempts = attempts + 1 WHERE id = ?`).bind(nowIso, n.id).run();
+      await db.prepare(`UPDATE notifications SET status = 'sent', sent_at = ? WHERE id = ?`).bind(nowIso, n.id).run();
       sent++;
     } else {
       const attempts = n.attempts + 1;
       await db
-        .prepare(`UPDATE notifications SET status = ?, attempts = ?, error = ? WHERE id = ?`)
-        .bind(attempts >= 3 ? "failed" : "pending", attempts, lastError, n.id)
+        .prepare(`UPDATE notifications SET status = ?, error = ? WHERE id = ?`)
+        .bind(attempts >= 3 ? "failed" : "pending", lastError, n.id)
         .run();
       failed++;
     }

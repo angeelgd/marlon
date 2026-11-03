@@ -17,6 +17,9 @@ import { transcribe } from "../llm/transcribe";
 import type { ToolContext } from "./tools/types";
 import { MONEY_TOOLS } from "./tools/money";
 import { FOOD_TOOLS } from "./tools/food";
+import { WELLBEING_TOOLS } from "./tools/wellbeing";
+import { listMemories, memoryPrompt } from "../memory/store";
+import { knowledgePrompt, matchKnowledge } from "../knowledge";
 import { saveSettings } from "../db/settings";
 import { CONSENT_ALWAYS, CONSENT_NO, CONSENT_ONCE, CONSENT_QUESTION, consentAnswer, looksFinancial } from "../money/sensitivity";
 
@@ -61,7 +64,7 @@ async function saveMessages(db: D1Database, items: { msg: LlmMessage; ui?: UiMes
   );
 }
 
-const ALL_TOOLS = [...PHASE1_TOOLS, ...PHASE2_TOOLS, ...PENDING_TOOLS, ...MONEY_TOOLS, ...FOOD_TOOLS];
+const ALL_TOOLS = [...PHASE1_TOOLS, ...PHASE2_TOOLS, ...PENDING_TOOLS, ...MONEY_TOOLS, ...FOOD_TOOLS, ...WELLBEING_TOOLS];
 
 interface StoredTurn {
   spoken: string;
@@ -191,9 +194,16 @@ export async function handleChat(env: Env, req: ChatRequest, now = Date.now()): 
     };
     // Con datos económicos y capa de pago se puede incluir todo el historial; si no, se omiten.
     const history = await loadHistory(env.DB, tier === "paid" || financialAllowed);
+    // Memoria (sin lo económico si va por la capa gratuita) y la guía relevante, si la hay.
+    const includeSensitive = tier === "paid" || financialAllowed;
+    const memories = memoryPrompt(await listMemories(env.DB, { includeSensitive }));
+    const doc = matchKnowledge(turn.spoken)[0]?.doc;
+    const system = [buildSystemPrompt(settings, now, detectLanguage(turn.spoken)), memories, doc ? knowledgePrompt(doc) : ""]
+      .filter(Boolean)
+      .join("\n\n");
     const run = await runAgent({
       llm,
-      system: buildSystemPrompt(settings, now, detectLanguage(turn.spoken)),
+      system,
       history: [...history, userMsg],
       tools: ALL_TOOLS,
       ctx,
@@ -258,5 +268,5 @@ export async function handleChat(env: Env, req: ChatRequest, now = Date.now()): 
     sensitive || resumed,
   );
 
-  return { message: assistantUi, changeIds: calendar.changeIds, preview: ctxOut.preview, notice, transcript };
+  return { message: assistantUi, changeIds: calendar.changeIds, preview: ctxOut.preview, notice, transcript, session: ctxOut.session };
 }

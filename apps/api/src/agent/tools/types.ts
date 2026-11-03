@@ -1,4 +1,4 @@
-import type { SchedulePreview, Settings } from "@marlon/shared";
+import type { SchedulePreview, Settings, WellbeingSession } from "@marlon/shared";
 import { z } from "zod";
 import type { CalendarService } from "../../calendar/service";
 import type { Env } from "../../env";
@@ -31,6 +31,8 @@ export interface ToolContext {
     needsFinancialConsent?: boolean;
     /** El turno ha tratado datos económicos (los mensajes se marcan como sensibles). */
     financialUsed?: boolean;
+    /** Sesión de bienestar que la app debe abrir. */
+    session?: WellbeingSession;
   };
 }
 

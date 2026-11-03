@@ -17,6 +17,12 @@ import { addExpense, deleteBudgetItem, deleteExpense, expenseSummary, listBudget
 import { clearActualShift, currentMonth, deleteRuleSet, listRuleSets, logActualShift, monthPay, saveRuleSet } from "./money/payroll";
 import { getMealPlan, toggleShoppingItem } from "./food/menu";
 import { getRecipes } from "./food/recipes";
+import type { SessionPhase } from "@marlon/shared";
+import { activeSession, cancelSession, pauseSession, resumeSession, startSession } from "./wellbeing/sessions";
+import { MEDITATIONS, pickMeditation, STRETCH_ROUTINES } from "./wellbeing/guided";
+import { estimateFinish, listBooks, readingLogs, readingPace } from "./reading/books";
+import { forget, listMemories, MEMORY_CATEGORIES, remember, updateMemory } from "./memory/store";
+import { KNOWLEDGE } from "./knowledge";
 import { dispatchNotifications, enqueue, vapidFromEnv } from "./push/scheduler";
 import { toLocalIso } from "./lib/time";
 import { mondayOfDate, replanGymWeek } from "./planning/apply";
@@ -312,6 +318,77 @@ api.post("/food/shopping/toggle", async (c) => {
   return ok ? c.json({ ok: true }) : c.json({ error: "No existe." }, 404);
 });
 
+/* ---------------------- bienestar y lectura ---------------------- */
+
+api.get("/session", async (c) => c.json({ session: await activeSession(c.env.DB, Date.now()) }));
+
+api.post("/session/:id/:action", async (c) => {
+  const { id, action } = c.req.param();
+  try {
+    if (action === "pause") return c.json({ session: await pauseSession(c.env, id, Date.now()) });
+    if (action === "resume") return c.json({ session: await resumeSession(c.env, id, Date.now()) });
+    if (action === "cancel") {
+      await cancelSession(c.env, id);
+      return c.json({ ok: true });
+    }
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+  return c.json({ error: "Acción no válida." }, 400);
+});
+
+api.post("/session/start", async (c) => {
+  const body = await c.req.json<{ kind?: string; minutes?: number; routine?: string }>().catch(() => ({}) as { kind?: string; minutes?: number; routine?: string });
+  const now = Date.now();
+  if (body.kind === "meditation") {
+    const m = pickMeditation(null, body.minutes);
+    const med = MEDITATIONS[m];
+    return c.json({ session: await startSession(c.env, { kind: "meditation", title: med.title, phases: med.phases }, now) });
+  }
+  if (body.kind === "stretch" && (body.routine === "post_gym" || body.routine === "desk")) {
+    const r = STRETCH_ROUTINES[body.routine];
+    return c.json({ session: await startSession(c.env, { kind: "stretch", title: r.title, phases: r.phases as unknown as SessionPhase[] }, now) });
+  }
+  return c.json({ error: "Sesión no válida." }, 400);
+});
+
+api.get("/reading", async (c) => {
+  const { settings, calendar } = await calendarFor(c.env);
+  const now = Date.now();
+  const books = await listBooks(c.env.DB);
+  const current = books.find((b) => b.status === "reading") ?? null;
+  let estimate = null;
+  if (current) {
+    const pace = readingPace(await readingLogs(c.env.DB, current.id));
+    const events = await calendar.list(new Date(now).toISOString(), new Date(now + 60 * 86_400_000).toISOString());
+    estimate = { pacePerTrip: pace ? Math.round(pace * settings.defaultCommuteMin * 10) / 10 : null, ...estimateFinish({ percent: current.percent, pace, events, tz: settings.timezone, now, tripMinutes: settings.defaultCommuteMin }) };
+  }
+  return c.json({ current, estimate, books });
+});
+
+api.get("/memories", async (c) => c.json({ memories: await listMemories(c.env.DB) }));
+
+api.post("/memories", async (c) => {
+  const parsed = z.object({ content: z.string().min(3).max(500), category: z.enum(MEMORY_CATEGORIES).default("other") }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Recuerdo no válido." }, 400);
+  return c.json(await remember(c.env.DB, parsed.data.content, parsed.data.category));
+});
+
+api.put("/memories/:id", async (c) => {
+  const parsed = z.object({ content: z.string().min(3).max(500), category: z.enum(MEMORY_CATEGORIES).optional() }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Recuerdo no válido." }, 400);
+  try {
+    await updateMemory(c.env.DB, c.req.param("id"), parsed.data.content, parsed.data.category);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 404);
+  }
+});
+
+api.delete("/memories/:id", async (c) => ((await forget(c.env.DB, c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "No existe." }, 404)));
+
+api.get("/knowledge", (c) => c.json({ docs: KNOWLEDGE.map((d) => ({ id: d.id, title: d.title, sources: d.sources })) }));
+
 /* ------------------------ voz del proveedor ------------------------ */
 
 api.post("/tts", async (c) => {
@@ -333,6 +410,8 @@ api.post("/tts", async (c) => {
 
 app.route("/api", api);
 app.all("/api/*", (c) => c.json({ error: "No encontrado." }, 404));
+
+export { NotificationScheduler } from "./push/alarm";
 
 export default {
   fetch: app.fetch,

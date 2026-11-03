@@ -86,6 +86,14 @@ export class MockProvider implements LlmProvider {
       }
       if (d.start && d.end && d.planned !== undefined) return { content: `Anotado: el ${d.date} trabajaste de ${d.start} a ${d.end}.`, toolCalls: [] };
       if (d.week_start && d.menu) return { content: `Menú listo para la semana del ${d.week_start}. La lista de la compra está en Más > Comida.`, toolCalls: [] };
+      if (d.started && d.phases !== undefined) return { content: `En marcha: ${d.started}. Total ${d.total}.`, toolCalls: [] };
+      if (d.started && d.minutes !== undefined && !d.steps) return { content: `Empezamos: ${d.started}. Respira.`, toolCalls: [] };
+      if (d.started && d.steps) return { content: `Vamos con ${d.started}. ${d.safety}`, toolCalls: [] };
+      if (d.book && d.percent !== undefined) {
+        const fin = d.estimated_finish ? ` Al ritmo de tus trayectos lo acabas el ${d.estimated_finish}.` : "";
+        return { content: `Apuntado: vas por el ${d.percent} % de «${d.book}».${fin}`, toolCalls: [] };
+      }
+      if (d.saved && typeof d.saved === "string") return { content: `Me lo apunto: ${d.saved}`, toolCalls: [] };
       if (d.saved?.kind) return { content: `Apuntado: ${d.saved.title}. Te lo iré recordando.`, toolCalls: [] };
       if (d.closed) return { content: `¡Hecho! Quito "${d.closed.title}" de la lista.`, toolCalls: [] };
       if (Array.isArray(d.sessions)) {
@@ -119,6 +127,18 @@ export class MockProvider implements LlmProvider {
     if (/men[uú]/.test(text)) return call("build_menu_and_shopping_list", {});
     const out = /sal[ií]\s+a\s+las\s+(\d{1,2})[:.](\d{2})/.exec(text);
     if (out) return call("log_actual_shift", { end: `${out[1]!.padStart(2, "0")}:${out[2]}` });
+    const timer = /(\d+)\s*(?:min(?:utos)?)\s+de\s+(\w+),?\s*(\d+)\s*(?:min(?:utos)?)?\s+de\s+descanso,?\s*(\d+)\s*(?:veces|rondas)/.exec(text);
+    if (timer) {
+      return call("start_timer", { label: timer[2]![0]!.toUpperCase() + timer[2]!.slice(1), work_minutes: Number(timer[1]), rest_minutes: Number(timer[3]), rounds: Number(timer[4]) });
+    }
+    if (/medita/.test(text)) return call("start_meditation", { minutes: /10/.test(text) ? 10 : /3/.test(text) ? 3 : 5 });
+    if (/estir/.test(text)) return call("start_stretching", { routine: /gimnasio|gym/.test(text) ? "post_gym" : "desk" });
+    const reading = /voy por el (\d{1,3})\s*%/.exec(text);
+    if (reading) return call("log_reading", { percent: Number(reading[1]) });
+    const book = /empiezo (?:a leer )?[«"](.+)[»"]/.exec(lastUserText(req.messages));
+    if (book) return call("start_book", { title: book[1] });
+    const mem = /recuerda que (.+)/i.exec(lastUserText(req.messages));
+    if (mem) return call("remember_fact", { content: mem[1]!.replace(/[.!]+$/, ""), category: "preference" });
     const remind = /recu[eé]rdame\s+(.+)/i.exec(lastUserText(req.messages));
     if (remind) {
       const title = remind[1]!.replace(/[.!?]+$/, "");

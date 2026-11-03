@@ -1,5 +1,7 @@
 export interface Env {
   DB: D1Database;
+  /** Durable Object con alarmas al segundo para los avisos (temporizadores). */
+  SCHEDULER?: DurableObjectNamespace;
   ASSETS?: Fetcher;
 
   // Variables (wrangler.toml [vars])
