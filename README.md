@@ -247,6 +247,24 @@ Con `LLM_PROVIDER=mock`, Marlon responde con reglas fijas. Si adjuntas cualquier
 
 Todo cabe en las capas gratuitas de Cloudflare, Google Cloud y Google AI Studio.
 
+### Desde GitHub, sin instalar nada (recomendado)
+
+Cloudflare se conecta al repositorio y despliega solo cada vez que cambia `main`. Las migraciones de la base de datos se aplican antes de cada despliegue.
+
+1. **Base de datos:** en el panel de Cloudflare, ve a *Storage & Databases > D1 > Create database*, con el nombre `marlon`. Su id va en `apps/api/wrangler.toml` (`database_id`). No es un secreto.
+2. **Conectar el repositorio:** *Workers & Pages > Create > Import a repository*, elige este repositorio y configura:
+   - Nombre del proyecto: `marlon` (igual que `name` en `apps/api/wrangler.toml`).
+   - Carpeta raíz (*Root directory*): `/`.
+   - Comando de build: `pnpm build`.
+   - Comando de despliegue: `pnpm --filter @marlon/api run deploy:ci`.
+   - Variable de build (*Build variables*): `NODE_VERSION` = `22`.
+3. **Secretos:** en el Worker, *Settings > Variables and Secrets*, añade como tipo **Secret** al menos `LLM_API_KEY`, `SESSION_SECRET` y `SETUP_TOKEN`. Los demás de `.env.example` se añaden igual cuando los necesites. Los despliegues no los borran.
+4. **Relanzar:** en *Deployments*, vuelve a desplegar para que el Worker arranque con los secretos. La dirección será del tipo `https://marlon.<tu-subdominio>.workers.dev`.
+
+Si el despliegue falla en el paso de migraciones por falta de permisos, aplícalas a mano en *D1 > marlon > Console*: pega uno a uno, en orden, los archivos de `apps/api/migrations`. Después cambia el comando de despliegue a `pnpm --filter @marlon/api exec wrangler deploy`.
+
+### Desde tu ordenador
+
 ### 1. Cloudflare
 
 1. Inicia sesión:
@@ -255,7 +273,7 @@ Todo cabe en las capas gratuitas de Cloudflare, Google Cloud y Google AI Studio.
    pnpm --filter @marlon/api exec wrangler login
    ```
 
-2. Crea la base de datos y copia el `database_id` que devuelve en `apps/api/wrangler.toml`:
+2. Crea la base de datos (si no la creaste ya desde el panel) y copia el `database_id` que devuelve en `apps/api/wrangler.toml`:
 
    ```bash
    pnpm --filter @marlon/api exec wrangler d1 create marlon
