@@ -28,6 +28,11 @@ import { toLocalIso } from "./lib/time";
 import { mondayOfDate, replanGymWeek } from "./planning/apply";
 import { fetchIcal, syncUniversity } from "./university/sync";
 import { pushLocalEventsToGoogle } from "./calendar/migrate";
+import { BANK_CALLBACK_PATH, finishBankAuth, startBankAuth } from "./bank/connect";
+import { EnableBanking } from "./bank/enable-banking";
+import { recategorizeExpense } from "./bank/recategorize";
+import { bankClient, bankStatus, listBankTransactions, syncBank } from "./bank/sync";
+import { bankLlm } from "./bank/llm";
 import { credentialSources, deleteCredential, saveCredential, withStoredCredentials, type StoredCredential } from "./integrations/credentials";
 import { CALLBACK_PATH, finishGoogleAuth, redirectUri, startGoogleAuth } from "./integrations/google-oauth";
 import { deleteUniversityIcalUrl, maskedHost, normalizeIcalUrl, saveUniversityIcalUrl, universityIcalUrl } from "./university/source";
@@ -59,6 +64,18 @@ app.onError((err, c) => {
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 app.route("/api/auth", authRoutes);
+
+/** Vuelta del permiso del banco (sin cookie: la protege el state de un solo uso). */
+app.get(BANK_CALLBACK_PATH, async (c) => {
+  try {
+    const r = await finishBankAuth(c.env, new URL(c.req.url).searchParams);
+    const sync = await syncBank(c.env, { llm: bankLlm(c.env) }).catch((err: Error) => ({ errors: [err.message], newExpenses: 0 }));
+    const warn = sync.errors.length ? `&bank_warning=${encodeURIComponent(sync.errors[0]!)}` : "";
+    return c.redirect(`/?connected=bank&accounts=${r.accounts}&expenses=${sync.newExpenses}${warn}`, 302);
+  } catch (err) {
+    return c.redirect(`/?connect_error=${encodeURIComponent((err as Error).message)}`, 302);
+  }
+});
 
 /** Vuelta del permiso de Google (sin cookie: la protege el state de un solo uso). */
 app.get(CALLBACK_PATH, async (c) => {
@@ -178,6 +195,10 @@ api.get("/connections", async (c) => {
     },
     youtube: { source: src.YOUTUBE_API_KEY },
     maps: { source: src.GOOGLE_MAPS_API_KEY },
+    bank: {
+      source: src.ENABLE_BANKING_APP_ID && src.ENABLE_BANKING_PRIVATE_KEY ? (src.ENABLE_BANKING_APP_ID === "secret" ? "secret" : "app") : null,
+      redirectUri: `${origin}${BANK_CALLBACK_PATH}`,
+    },
   });
 });
 
@@ -189,7 +210,8 @@ const ConnectionBody = z.object({
 
 api.put("/connections/:name", async (c) => {
   const name = c.req.param("name");
-  const parsed = ConnectionBody.safeParse(await c.req.json().catch(() => null));
+  const body = await c.req.json().catch(() => null);
+  const parsed = name === "enable-banking" ? ConnectionBody.safeParse({}) : ConnectionBody.safeParse(body);
   if (!parsed.success) return c.json({ error: "Datos no válidos." }, 400);
   const b = parsed.data;
   if (name === "google-client") {
@@ -199,6 +221,19 @@ api.put("/connections/:name", async (c) => {
     }
     await saveCredential(c.env, "GOOGLE_CLIENT_ID", b.clientId);
     await saveCredential(c.env, "GOOGLE_CLIENT_SECRET", b.clientSecret);
+    return c.json({ ok: true });
+  }
+  if (name === "enable-banking") {
+    const pb = z.object({ appId: z.string().trim().min(8).max(100), privateKey: z.string().min(100).max(10_000) }).safeParse(body);
+    if (!pb.success) return c.json({ error: "Pega el id de la aplicación y el archivo .pem completo." }, 400);
+    try {
+      // Comprueba la firma con una consulta real antes de guardar nada.
+      await new EnableBanking(pb.data.appId, pb.data.privateKey).aspsps("FI");
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
+    }
+    await saveCredential(c.env, "ENABLE_BANKING_APP_ID", pb.data.appId);
+    await saveCredential(c.env, "ENABLE_BANKING_PRIVATE_KEY", pb.data.privateKey.trim());
     return c.json({ ok: true });
   }
   if (name === "youtube" || name === "maps") {
@@ -220,9 +255,64 @@ api.delete("/connections/:name", async (c) => {
     "google-client": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"],
     youtube: ["YOUTUBE_API_KEY"],
     maps: ["GOOGLE_MAPS_API_KEY"],
+    "enable-banking": ["ENABLE_BANKING_APP_ID", "ENABLE_BANKING_PRIVATE_KEY"],
   };
   if (!keys[name]) return c.json({ error: "Conexión desconocida." }, 404);
   for (const k of keys[name]) await deleteCredential(c.env, k);
+  return c.json({ ok: true });
+});
+
+/* ------------------------------ banco ------------------------------ */
+
+api.get("/bank", async (c) => c.json(await bankStatus(c.env)));
+
+api.get("/bank/aspsps", async (c) => {
+  const client = bankClient(c.env);
+  if (!client) return c.json({ error: "Faltan las credenciales de Enable Banking." }, 400);
+  const country = /^[A-Z]{2}$/.test(c.req.query("country") ?? "") ? c.req.query("country")! : "FI";
+  try {
+    const list = await client.aspsps(country);
+    return c.json({ aspsps: list.map((a) => ({ name: a.name, country: a.country, logo: a.logo ?? null, maximumConsentSeconds: a.maximum_consent_validity ?? null })) });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+api.post("/bank/connect", async (c) => {
+  const parsed = z
+    .object({ name: z.string().min(1).max(120), country: z.string().regex(/^[A-Z]{2}$/), maximumConsentSeconds: z.number().int().positive().nullable().optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Elige un banco." }, 400);
+  try {
+    const url = await startBankAuth(c.env, new URL(c.req.url).origin, { ...parsed.data, maximumConsentSeconds: parsed.data.maximumConsentSeconds ?? undefined });
+    return c.json({ url });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+api.post("/bank/sync", async (c) => {
+  const r = await syncBank(c.env, { llm: bankLlm(c.env) });
+  if (r.skipped === "no_credentials") return c.json({ error: "Faltan las credenciales de Enable Banking." }, 400);
+  if (r.skipped === "no_links") return c.json({ error: "Aún no has conectado ningún banco." }, 400);
+  return c.json(r);
+});
+
+api.get("/bank/transactions", async (c) => {
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  const { settings } = await calendarFor(c.env);
+  const today = toLocalIso(Date.now(), settings.timezone).slice(0, 10);
+  const from = day.test(c.req.query("from") ?? "") ? c.req.query("from")! : `${today.slice(0, 7)}-01`;
+  const to = day.test(c.req.query("to") ?? "") ? c.req.query("to")! : today;
+  return c.json({ transactions: await listBankTransactions(c.env.DB, { from, to, search: c.req.query("q") || undefined }) });
+});
+
+api.delete("/bank/:id", async (c) => {
+  const row = await c.env.DB.prepare(`SELECT session_id FROM bank_links WHERE id = ?`).bind(c.req.param("id")).first<{ session_id: string }>();
+  if (!row) return c.json({ error: "No existe." }, 404);
+  await bankClient(c.env)?.deleteSession(row.session_id);
+  // Los movimientos y gastos ya importados se quedan; solo se corta el acceso.
+  await c.env.DB.prepare(`UPDATE bank_links SET status = 'revoked' WHERE id = ?`).bind(c.req.param("id")).run();
   return c.json({ ok: true });
 });
 
@@ -378,6 +468,14 @@ api.post("/expenses", async (c) => {
   const parsed = ExpenseBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Gasto no válido." }, 400);
   return c.json({ expense: await addExpense(c.env.DB, { ...parsed.data, source: "text" }) });
+});
+
+/** Cambiar la categoría de un gasto. Si viene del banco, se aprende para ese comercio. */
+api.patch("/expenses/:id", async (c) => {
+  const parsed = z.object({ category: ExpenseCategorySchema }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Categoría no válida." }, 400);
+  const r = await recategorizeExpense(c.env.DB, c.req.param("id"), parsed.data.category);
+  return r ? c.json(r) : c.json({ error: "No existe." }, 404);
 });
 
 api.delete("/expenses/:id", async (c) => {

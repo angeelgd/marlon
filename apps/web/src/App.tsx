@@ -186,6 +186,11 @@ function Main({ onLogout }: { onLogout(): void }) {
       const moved = Number(params.get("moved") ?? 0);
       showToast(moved > 0 ? `Google Calendar conectado. ${moved} eventos subidos a Google.` : "Google Calendar conectado.");
     }
+    if (connected === "bank") {
+      const n = Number(params.get("expenses") ?? 0);
+      const warn = params.get("bank_warning");
+      showToast(warn ? `Banco conectado. Aviso: ${warn}` : n > 0 ? `Banco conectado. ${n} gastos importados.` : "Banco conectado.");
+    }
     if (connectError) {
       setShowSettings(true);
       showToast(connectError);

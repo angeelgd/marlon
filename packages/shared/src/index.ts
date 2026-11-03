@@ -345,7 +345,7 @@ export interface Expense {
   merchant: string | null;
   category: ExpenseCategory;
   note: string | null;
-  source: "text" | "voice" | "receipt";
+  source: "text" | "voice" | "receipt" | "bank";
   createdAt: string;
 }
 

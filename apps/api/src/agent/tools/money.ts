@@ -11,6 +11,7 @@ import {
 } from "../../money/expenses";
 import { currentMonth, logActualShift, monthPay } from "../../money/payroll";
 import { saveSettings } from "../../db/settings";
+import { bankStatus, listBankTransactions, syncBank } from "../../bank/sync";
 import { defineTool, requireFinancial, ToolError, type Tool, type ToolContext } from "./types";
 
 const LocalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato YYYY-MM-DD");
@@ -224,7 +225,59 @@ export const expenseSummaryTool = defineTool({
   },
 });
 
+export const bankOverviewTool = defineTool({
+  name: "bank_overview",
+  description:
+    "Saldos de las cuentas bancarias conectadas y movimientos reales del banco (cargos e ingresos) en un periodo, con búsqueda por comercio o concepto. Úsalo para '¿cuánto tengo?', '¿qué he pagado en Wolt este mes?' o '¿me ha llegado la nómina?'.",
+  schema: z.object({
+    from: LocalDate.optional().describe("Por defecto, el día 1 del mes actual."),
+    to: LocalDate.optional(),
+    search: z.string().max(60).optional().describe("Texto a buscar en comercio o concepto."),
+    sync_first: z.boolean().default(false).describe("Descargar antes lo último del banco (gasta una de las pocas consultas diarias)."),
+  }),
+  async run(a, ctx) {
+    requireFinancial(ctx);
+    let synced: string | undefined;
+    if (a.sync_first) {
+      const r = await syncBank(ctx.env, { now: ctx.now, fetchImpl: ctx.fetchImpl, llm: null });
+      synced = r.skipped ? undefined : `${r.newTransactions} movimientos nuevos${r.errors.length ? `; avisos: ${r.errors.join(" ")}` : ""}`;
+    }
+    const status = await bankStatus(ctx.env);
+    if (!status.links.length) {
+      throw new ToolError("No hay ningún banco conectado.", "Explica que puede conectarlo en Ajustes > Conexiones > Banco.");
+    }
+    const t = today(ctx);
+    const from = a.from ?? `${t.slice(0, 7)}-01`;
+    const txs = await listBankTransactions(ctx.db, { from, to: a.to ?? t, search: a.search, limit: 80 });
+    const out = txs.filter((x) => x.kind === "normal");
+    return {
+      synced,
+      accounts: status.links.flatMap((l) =>
+        l.accounts.map((acc) => ({
+          bank: l.bank,
+          account: acc.name ?? acc.iban,
+          balance: acc.balanceCents === null ? "desconocido" : eur(acc.balanceCents),
+          balance_at: acc.balanceAt,
+          consent: l.status === "active" ? `válido hasta ${l.validUntil?.slice(0, 10) ?? "?"}` : "caducado: hay que reconectar",
+        })),
+      ),
+      period: { from, to: a.to ?? t },
+      total_out: eur(-out.filter((x) => x.amountCents < 0).reduce((s, x) => s + x.amountCents, 0)),
+      total_in: eur(out.filter((x) => x.amountCents > 0).reduce((s, x) => s + x.amountCents, 0)),
+      transactions: out.slice(0, 40).map((x) => ({
+        date: x.date,
+        amount: eur(x.amountCents),
+        who: x.counterparty,
+        concept: x.description?.slice(0, 80) ?? undefined,
+        pending: x.status === "pending" || undefined,
+      })),
+      more: out.length > 40 ? out.length - 40 : undefined,
+    };
+  },
+});
+
 export const MONEY_TOOLS: Tool[] = [
+  bankOverviewTool,
   logActualShiftTool,
   calcMonthlyPay,
   setPayOption,

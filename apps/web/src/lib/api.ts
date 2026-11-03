@@ -73,10 +73,22 @@ export const api = {
   syncUniversity: () =>
     post<{ created: number; changed: number; removed: number; unchanged: number; conflicts: unknown[] }>("/university/sync"),
   connections: () => request<Connections>("/connections"),
-  saveConnection: (name: "google-client" | "youtube" | "maps", body: { clientId?: string; clientSecret?: string; key?: string }) =>
+  saveConnection: (
+    name: "google-client" | "youtube" | "maps" | "enable-banking",
+    body: { clientId?: string; clientSecret?: string; key?: string; appId?: string; privateKey?: string },
+  ) =>
     request<{ ok: true }>(`/connections/${name}`, { method: "PUT", body: JSON.stringify(body) }),
-  deleteConnection: (name: "google" | "google-client" | "youtube" | "maps") =>
+  deleteConnection: (name: "google" | "google-client" | "youtube" | "maps" | "enable-banking") =>
     request<{ ok: true }>(`/connections/${name}`, { method: "DELETE", headers: { "content-type": "application/json" } }),
+  bank: () => request<BankStatus>("/bank"),
+  bankAspsps: (country = "FI") => request<{ aspsps: Aspsp[] }>(`/bank/aspsps?country=${country}`),
+  bankConnect: (a: Aspsp) => post<{ url: string }>("/bank/connect", a),
+  bankSync: () => post<{ accounts: number; newTransactions: number; newExpenses: number; matched: number; errors: string[] }>("/bank/sync"),
+  bankTransactions: (from: string, to: string) => request<{ transactions: BankTx[] }>(`/bank/transactions?from=${from}&to=${to}`),
+  bankDisconnect: (id: string) =>
+    request<{ ok: true }>(`/bank/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "content-type": "application/json" } }),
+  recategorizeExpense: (id: string, category: string) =>
+    request<{ updated: number }>(`/expenses/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ category }) }),
   universityLink: () => request<UniversityLink>("/university/link"),
   saveUniversityLink: (url: string) =>
     request<UniversityLink & { sync: { created: number; changed: number; removed: number; unchanged: number; conflicts: unknown[] } }>(
@@ -146,6 +158,38 @@ export interface Connections {
   google: { clientSource: CredentialSource; connected: boolean; tokenSource: CredentialSource; redirectUri: string };
   youtube: { source: CredentialSource };
   maps: { source: CredentialSource };
+  bank: { source: CredentialSource; redirectUri: string };
+}
+
+export interface Aspsp {
+  name: string;
+  country: string;
+  logo?: string | null;
+  maximumConsentSeconds?: number | null;
+}
+
+export interface BankStatus {
+  configured: boolean;
+  links: {
+    id: string;
+    bank: string;
+    validUntil: string | null;
+    status: "active" | "expired" | "revoked";
+    lastSyncAt: string | null;
+    lastError: string | null;
+    accounts: { uid: string; name: string | null; iban: string | null; currency: string | null; balanceCents: number | null; balanceAt: string | null }[];
+  }[];
+}
+
+export interface BankTx {
+  id: string;
+  date: string;
+  amountCents: number;
+  counterparty: string | null;
+  description: string | null;
+  status: "booked" | "pending";
+  kind: "normal" | "own_transfer";
+  expenseId: string | null;
 }
 
 export interface UniversityLink {
