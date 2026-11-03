@@ -9,6 +9,8 @@ export interface Env {
   LLM_BASE_URL?: string;
   LLM_MODEL?: string;
   LLM_VISION_MODEL?: string;
+  /** "1" para enviar temperature (los modelos Gemini 3.x ya no la usan). */
+  LLM_SEND_TEMPERATURE?: string;
 
   // Secretos (wrangler secret put / .dev.vars)
   LLM_API_KEY?: string;

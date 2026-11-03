@@ -7,6 +7,11 @@ export interface OpenAiCompatibleConfig {
   model: string;
   visionModel?: string;
   tier: "free" | "paid";
+  /**
+   * Enviar "temperature". Los modelos Gemini 3.x la han dejado obsoleta, así que por
+   * defecto no se envía; actívalo (LLM_SEND_TEMPERATURE=1) para proveedores que la usen.
+   */
+  sendTemperature?: boolean;
   maxRetries?: number;
   fetchImpl?: typeof fetch;
 }
@@ -33,8 +38,8 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     const body: Record<string, unknown> = {
       model: req.vision && this.cfg.visionModel ? this.cfg.visionModel : this.cfg.model,
       messages: req.messages,
-      temperature: req.temperature ?? 0.6,
     };
+    if (this.cfg.sendTemperature && req.temperature !== undefined) body.temperature = req.temperature;
     if (req.tools?.length) body.tools = req.tools;
     if (req.json) body.response_format = { type: "json_object" };
 

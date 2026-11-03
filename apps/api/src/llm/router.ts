@@ -18,7 +18,12 @@ export interface RouteOptions {
 }
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+/**
+ * Alias que Google mantiene apuntando al Flash más reciente (avisa dos semanas antes
+ * de cambiarlo), para no depender de un modelo con fecha de retirada.
+ * Para fijar uno concreto, usa LLM_MODEL.
+ */
+export const DEFAULT_MODEL = "gemini-flash-latest";
 
 function freeProvider(env: Env): LlmProvider | null {
   if (!env.LLM_API_KEY) return null;
@@ -29,6 +34,7 @@ function freeProvider(env: Env): LlmProvider | null {
     model: env.LLM_MODEL || DEFAULT_MODEL,
     visionModel: env.LLM_VISION_MODEL,
     tier: "free",
+    sendTemperature: env.LLM_SEND_TEMPERATURE === "1",
   });
 }
 
@@ -41,6 +47,7 @@ function paidProvider(env: Env): LlmProvider | null {
     model: env.LLM_PAID_MODEL || env.LLM_MODEL || DEFAULT_MODEL,
     visionModel: env.LLM_VISION_MODEL,
     tier: "paid",
+    sendTemperature: env.LLM_SEND_TEMPERATURE === "1",
   });
 }
 
