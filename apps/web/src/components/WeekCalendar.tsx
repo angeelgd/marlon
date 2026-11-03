@@ -1,10 +1,11 @@
 import type { CalendarEvent, PreviewEvent, SchedulePreview } from "@marlon/shared";
 import { toLocalParts } from "@marlon/shared";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { dayLabel, monthLabel, segmentsOf, timeLabel, weekDays, type Segment } from "../lib/week";
 
-const HOUR_PX = 44;
+const HOUR_PX = 48;
 const SCROLL_TO_HOUR = 7;
 
 interface Props {
@@ -85,7 +86,7 @@ export function WeekCalendar(props: Props) {
   const scrolled = useRef(false);
   useEffect(() => {
     if (!visible || scrolled.current || !scrollRef.current) return;
-    scrollRef.current.scrollTop = SCROLL_TO_HOUR * HOUR_PX;
+    scrollRef.current.scrollTop = SCROLL_TO_HOUR * HOUR_PX - 12;
     scrolled.current = true;
   }, [visible]);
 
@@ -124,26 +125,36 @@ export function WeekCalendar(props: Props) {
   return (
     <section className="week" aria-label="Calendario semanal">
       <header className="week-head">
-        <button className="icon-btn" onClick={props.onPrev} aria-label="Semana anterior">‹</button>
-        <button className="week-title" onClick={props.onToday}>
-          {monthLabel(monday)}
+        <div className="week-title">
+          <h2>{monthLabel(monday).replace(" de ", " ")}</h2>
+          <span className="muted">{rangeLabel(days)}</span>
           {props.loading && <span className="dot-loading" aria-hidden />}
-        </button>
-        <button className="icon-btn" onClick={props.onNext} aria-label="Semana siguiente">›</button>
+        </div>
+        <div className="week-nav">
+          <button className="icon-btn sm" onClick={props.onPrev} aria-label="Semana anterior">
+            <ChevronLeft size={18} strokeWidth={1.75} />
+          </button>
+          <button className="btn ghost small" onClick={props.onToday} disabled={days.includes(today)}>
+            Hoy
+          </button>
+          <button className="icon-btn sm" onClick={props.onNext} aria-label="Semana siguiente">
+            <ChevronRight size={18} strokeWidth={1.75} />
+          </button>
+        </div>
       </header>
 
       {pending && (
         <div className="preview-bar" role="status">
           <div>
-            <strong>Vista previa del horario</strong>
+            <strong>Horario por confirmar</strong>
             <span>
-              {pending.shifts.length} turnos, {pending.daysOff.length} días libres
-              {pending.issues.length > 0 && `, ${pending.issues.length} dudas`}
+              {pending.shifts.length} turnos · {pending.daysOff.length} días libres
+              {pending.issues.length > 0 && ` · ${pending.issues.length} dudas`}
             </span>
           </div>
           <div className="preview-actions">
-            <button className="btn ghost" onClick={props.onDiscardPreview}>Descartar</button>
-            <button className="btn" onClick={props.onConfirmPreview} disabled={pending.issues.length > 0} title={pending.issues.length ? "Resuelve las dudas en el chat" : undefined}>
+            <button className="btn ghost small" onClick={props.onDiscardPreview}>Descartar</button>
+            <button className="btn small" onClick={props.onConfirmPreview} disabled={pending.issues.length > 0} title={pending.issues.length ? "Resuelve las dudas en el chat" : undefined}>
               Guardar
             </button>
           </div>
@@ -220,7 +231,8 @@ export function WeekCalendar(props: Props) {
                         <span className="event-title">{p.title}</span>
                         {height > 30 && (
                           <span className="event-time">
-                            {timeLabel(p.start, tz)} a {timeLabel(p.end, tz)}
+                            {timeLabel(p.start, tz)}
+                            <span className="event-end"> – {timeLabel(p.end, tz)}</span>
                           </span>
                         )}
                       </motion.div>
@@ -232,6 +244,29 @@ export function WeekCalendar(props: Props) {
           </LayoutGroup>
         </div>
       </div>
+      <footer className="legend" aria-label="Leyenda">
+        {LEGEND.map(([k, label]) => (
+          <span key={k} className={`kind-${k}`}>
+            <i />
+            {label}
+          </span>
+        ))}
+      </footer>
     </section>
   );
+}
+
+const LEGEND: [string, string][] = [
+  ["work_planned", "Trabajo"],
+  ["university", "Universidad"],
+  ["gym", "Gimnasio"],
+  ["marlon", "Marlon"],
+  ["manual", "Otros"],
+];
+
+function rangeLabel(days: string[]): string {
+  const f = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+  const a = new Date(`${days[0]}T12:00:00Z`);
+  const b = new Date(`${days[days.length - 1]}T12:00:00Z`);
+  return `${f.format(a).replace(".", "")} – ${f.format(b).replace(".", "")}`;
 }

@@ -53,7 +53,7 @@ describe("planificador de notificaciones", () => {
     expect(await planNotifications(deps)).toBe(1);
     expect(await planNotifications(deps)).toBe(0);
     const n = await env.DB.prepare(`SELECT * FROM notifications`).first<{ kind: string; title: string; body: string; url: string }>();
-    expect(n).toMatchObject({ kind: "morning", title: "Buenos días ☀️" });
+    expect(n).toMatchObject({ kind: "morning", title: "Buenos días" });
     expect(n!.body).toBe("Hoy empiezas con Trabajo a las 15:45. 1 °C y nieve débil. Toca para ver tu día.");
     expect(decodeURIComponent(n!.url)).toBe("/?say=buenos días");
   });
@@ -187,7 +187,7 @@ describe("rutas de la fase 3", () => {
     }) as unknown as typeof fetch);
     const test = (await (await app.request(`${base}/push/test`, post({}), env)).json()) as { sent: number };
     expect(test.sent).toBe(1);
-    expect(decrypt(bodies[0]!, d).body).toBe("Las notificaciones funcionan 👌");
+    expect(decrypt(bodies[0]!, d).body).toBe("Las notificaciones funcionan.");
 
     await app.request(`${base}/push/unsubscribe`, post({ endpoint: d.sub.endpoint }), env);
     const n = await env.DB.prepare(`SELECT COUNT(*) AS n FROM push_subscriptions`).first<{ n: number }>();

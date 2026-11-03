@@ -1,5 +1,6 @@
 import type { Pending } from "@marlon/shared";
 import { AnimatePresence, motion } from "framer-motion";
+import { Cake, Check, Inbox, Loader2, X } from "lucide-react";
 import { useMemo } from "react";
 
 interface Props {
@@ -13,12 +14,12 @@ interface Props {
 const AREA: Record<Pending["area"], string> = { work: "Trabajo", uni: "Uni", personal: "Personal" };
 
 function fmtDate(date: string, today: string): string {
-  if (date === today) return "hoy";
+  if (date === today) return "Hoy";
   const d = new Date(`${date}T12:00:00Z`);
   const t = new Date(`${today}T12:00:00Z`);
   const days = Math.round((d.getTime() - t.getTime()) / 86_400_000);
-  if (days === 1) return "mañana";
-  if (days < 0) return days === -1 ? "ayer" : `hace ${-days} días`;
+  if (days === 1) return "Mañana";
+  if (days < 0) return days === -1 ? "Ayer" : `Hace ${-days} días`;
   return new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(d);
 }
 
@@ -35,59 +36,74 @@ export function Pendings({ pendings, today, busy, onClose, onDelete }: Props) {
   }, [pendings, today]);
 
   return (
-    <section className="pendings" aria-label="Pendientes">
-      <h2>Pendientes</h2>
-      {groups.length === 0 && (
-        <p className="muted">
-          Nada pendiente. Dime cosas como "recuérdame contestar a Mateo" o "el cumple de Laura es el 10 de marzo".
-        </p>
-      )}
-      {groups.map((g) => (
-        <div key={g.key} className="pending-group">
-          <h3>{g.label}</h3>
-          <ul>
-            <AnimatePresence initial={false}>
-              {g.items.map((p) => {
-                const overdue = p.dueDate !== null && p.dueDate < today && p.kind !== "birthday";
-                return (
-                  <motion.li
-                    key={p.id}
-                    layout
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, x: 40 }}
-                    className={overdue ? "overdue" : ""}
-                  >
-                    <button
-                      className="check"
-                      aria-label={p.kind === "birthday" ? `Felicitado: ${p.title}` : `Hecho: ${p.title}`}
-                      disabled={busy !== null}
-                      onClick={() => onClose(p.id)}
+    <section className="pendings scroll" aria-label="Pendientes">
+      <header className="section-head desk-only">
+        <h2>Pendientes</h2>
+      </header>
+      <div className="stack">
+        {groups.length === 0 && (
+          <div className="empty">
+            <Inbox size={28} strokeWidth={1.5} />
+            <h3>Todo al día</h3>
+            <p>Dile a Marlon cosas como «recuérdame contestar a Mateo» o «el cumple de Laura es el 10 de marzo».</p>
+          </div>
+        )}
+        {groups.map((g) => (
+          <div key={g.key}>
+            <h3 className="eyebrow group-title">
+              {g.label} <span className="num">· {g.items.length}</span>
+            </h3>
+            <ul className="list">
+              <AnimatePresence initial={false}>
+                {g.items.map((p) => {
+                  const overdue = p.dueDate !== null && p.dueDate < today && p.kind !== "birthday";
+                  const birthday = p.kind === "birthday";
+                  return (
+                    <motion.li
+                      key={p.id}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: 40 }}
+                      className={overdue ? "overdue" : ""}
                     >
-                      {busy === p.id ? "…" : p.kind === "birthday" ? "🎂" : ""}
-                    </button>
-                    <div className="pending-main">
-                      <p>{p.title}</p>
-                      <span className="muted small">
-                        {[
-                          p.dueDate ? `${fmtDate(p.dueDate, today)}${p.dueTime ? ` a las ${p.dueTime}` : ""}` : null,
-                          p.kind !== "birthday" ? AREA[p.area] : null,
-                          overdue ? "vencido" : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </div>
-                    <button className="icon-btn small-x" aria-label={`Borrar: ${p.title}`} onClick={() => onDelete(p.id)}>
-                      ✕
-                    </button>
-                  </motion.li>
-                );
-              })}
-            </AnimatePresence>
-          </ul>
-        </div>
-      ))}
+                      <button
+                        className={`check ${birthday ? "gift" : ""} ${busy === p.id ? "busy" : ""}`}
+                        aria-label={birthday ? `Felicitado: ${p.title}` : `Hecho: ${p.title}`}
+                        disabled={busy !== null}
+                        onClick={() => onClose(p.id)}
+                      >
+                        {busy === p.id ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : birthday ? (
+                          <Cake size={13} strokeWidth={1.75} />
+                        ) : (
+                          <Check size={13} strokeWidth={2.5} className="check-mark" />
+                        )}
+                      </button>
+                      <div className="list-main">
+                        <p>{p.title}</p>
+                        <div className="meta">
+                          {[
+                            p.dueDate ? `${fmtDate(p.dueDate, today)}${p.dueTime ? `, ${p.dueTime}` : ""}` : null,
+                            !birthday ? AREA[p.area] : null,
+                            overdue ? "Vencido" : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      </div>
+                      <button className="icon-btn sm quiet" aria-label={`Borrar: ${p.title}`} onClick={() => onDelete(p.id)}>
+                        <X size={16} strokeWidth={1.75} />
+                      </button>
+                    </motion.li>
+                  );
+                })}
+              </AnimatePresence>
+            </ul>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

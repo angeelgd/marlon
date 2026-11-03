@@ -5,6 +5,7 @@ import type { Env } from "../env";
 import { nowIso } from "../lib/ids";
 import { conflictsInRange, type Conflict } from "../planning/conflicts";
 import { parseIcal, type IcalEvent } from "./ical";
+import { universityIcalUrl } from "./source";
 
 /** Días hacia delante que se sincronizan del calendario de la uni. */
 const HORIZON_DAYS = 120;
@@ -35,6 +36,22 @@ function toInput(ev: IcalEvent): EventInput {
   };
 }
 
+/** Descarga el iCal y comprueba que lo es (un enlace a la web de Lukkari devuelve HTML). */
+export async function fetchIcal(url: string, fetchImpl?: typeof fetch): Promise<string> {
+  let res: Response;
+  try {
+    res = await (fetchImpl ?? fetch)(url, { headers: { accept: "text/calendar" } });
+  } catch {
+    throw new Error("No se pudo descargar el calendario de la uni. Revisa el enlace.");
+  }
+  if (!res.ok) throw new Error(`El calendario de la uni respondió ${res.status}. Revisa que el enlace siga activo.`);
+  const text = await res.text();
+  if (!/BEGIN:VCALENDAR/i.test(text)) {
+    throw new Error("Ese enlace no devuelve un calendario. En Lukkari, copia el enlace de exportación iCal (el que lleva hash=).");
+  }
+  return text;
+}
+
 /**
  * Trae el iCal de Lukkari y lo refleja en el calendario sin duplicar:
  * cada clase se identifica por UID + inicio original.
@@ -44,18 +61,17 @@ export async function syncUniversity(
   env: Env,
   calendar: CalendarService,
   settings: Settings,
-  opts: { now?: number; fetchImpl?: typeof fetch } = {},
+  opts: { now?: number; fetchImpl?: typeof fetch; url?: string } = {},
 ): Promise<UniversitySyncResult> {
   const empty: UniversitySyncResult = { created: 0, changed: 0, removed: 0, unchanged: 0, failed: [], conflicts: [], groupId: null };
-  if (!env.UNIVERSITY_ICAL_URL) return { ...empty, skipped: "no_url" };
+  const url = opts.url ?? (await universityIcalUrl(env)).url;
+  if (!url) return { ...empty, skipped: "no_url" };
 
   const now = opts.now ?? Date.now();
   const from = now - 86_400_000; // no se toca el pasado
   const to = now + HORIZON_DAYS * 86_400_000;
 
-  const res = await (opts.fetchImpl ?? fetch)(env.UNIVERSITY_ICAL_URL, { headers: { accept: "text/calendar" } });
-  if (!res.ok) throw new Error(`El calendario de la uni respondió ${res.status}.`);
-  const feed = parseIcal(await res.text(), { defaultTz: settings.timezone, from, to });
+  const feed = parseIcal(await fetchIcal(url, opts.fetchImpl), { defaultTz: settings.timezone, from, to });
 
   const fromIso = new Date(from).toISOString();
   const toIso = new Date(to).toISOString();

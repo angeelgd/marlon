@@ -56,7 +56,7 @@ describe("avisos por fase", () => {
     expect(n.map((x) => [new Date(x.at).toISOString().slice(11, 19), x.title])).toEqual([
       ["10:00:40", "Descanso · 20 s"],
       ["10:01:00", "¡Vamos! · 40 s"],
-      ["10:01:40", "¡Terminado! 🎉"],
+      ["10:01:40", "Sesión completada"],
     ]);
     expect(new Set(n.map((x) => x.key)).size).toBe(3);
   });

@@ -182,7 +182,7 @@ export const logReadingTool = defineTool({
     const b = await bookFor(ctx, a.book);
     await logReading(ctx.db, b.id, a.percent, a.minutes ?? ctx.settings.defaultCommuteMin, ctx.now);
     if (a.percent >= 100) {
-      ctx.out.quickReplies.push("⭐⭐⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐", "⭐⭐");
+      ctx.out.quickReplies.push("Un 5 de 5", "Un 4 de 5", "Un 3 de 5", "Un 2 de 5");
       return { book: b.title, finished: true, ask: "¡Terminado! Pide una nota del 1 al 5 y su opinión con sus palabras, y guárdalas con finish_book." };
     }
     return { book: b.title, ...(await status(ctx, b.id, a.percent)) };

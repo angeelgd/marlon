@@ -341,7 +341,10 @@ Si Google revoca el token, Marlon lo indica en la app. Repite el paso 4 y actual
 
 ### 4. Calendario de la uni y rutas
 
-1. En Lukkari, copia la URL iCal de tu calendario y súbela como secreto. El parámetro `hash=` de la URL funciona como una contraseña.
+1. En Lukkari, copia la URL iCal de tu calendario y pégala en **Ajustes > Universidad**. Marlon comprueba que es un calendario, lo sincroniza al momento y después cada 3 horas.
+   - El parámetro `hash=` de la URL funciona como una contraseña, así que se guarda **cifrada** (AES-GCM con una clave derivada de `SESSION_SECRET`) y la app nunca vuelve a mostrarla entera.
+   - Si cambias `SESSION_SECRET`, tendrás que volver a pegar el enlace.
+   - Alternativa: subirla como secreto de Cloudflare. Si existe, tiene prioridad sobre la de Ajustes.
 
    ```bash
    pnpm --filter @marlon/api exec wrangler secret put UNIVERSITY_ICAL_URL

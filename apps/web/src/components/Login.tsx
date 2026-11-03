@@ -45,7 +45,8 @@ export function Login({ hasCredentials, onDone }: Props) {
 
   return (
     <main className="login">
-      <img src="/favicon.svg" alt="" width={72} height={72} />
+      <div className="login-card">
+      <span className="login-mark" aria-hidden>M</span>
       <h1>Marlon</h1>
       {registering ? (
         <form
@@ -54,8 +55,9 @@ export function Login({ hasCredentials, onDone }: Props) {
             void register();
           }}
         >
-          <p className="muted">Primera vez: escribe el código de configuración y crea tu passkey.</p>
+          <p>Primera vez: escribe el código de configuración y crea tu passkey.</p>
           <input
+            className="field"
             type="text"
             placeholder="Código de configuración"
             value={setupToken}
@@ -66,18 +68,20 @@ export function Login({ hasCredentials, onDone }: Props) {
             autoComplete="one-time-code"
             required
           />
-          <button className="btn" disabled={busy || !setupToken}>{busy ? "…" : "Crear passkey"}</button>
+          <button className="btn block" disabled={busy || !setupToken}>{busy ? "…" : "Crear passkey"}</button>
           {hasCredentials && (
             <button type="button" className="link" onClick={() => setRegistering(false)}>Ya tengo passkey</button>
           )}
         </form>
       ) : (
         <>
-          <button className="btn" onClick={login} disabled={busy}>{busy ? "…" : "Entrar con passkey"}</button>
+          <p>Tu agenda, tu trabajo y tus planes, en orden.</p>
+          <button className="btn block" onClick={login} disabled={busy}>{busy ? "…" : "Entrar con passkey"}</button>
           <button type="button" className="link" onClick={() => setRegistering(true)}>Registrar otra passkey</button>
         </>
       )}
       {error && <p className="chat-error">{error}</p>}
+      </div>
     </main>
   );
 }

@@ -11,6 +11,19 @@ import type {
   WellbeingSession,
 } from "@marlon/shared";
 import { addDays, DEFAULT_SETTINGS, toLocalIso } from "@marlon/shared";
+import {
+  CalendarDays,
+  History as History_,
+  LayoutGrid,
+  Leaf,
+  ListChecks,
+  MessageCircle,
+  Settings2,
+  UtensilsCrossed,
+  Volume2,
+  VolumeX,
+  Wallet,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat } from "./components/Chat";
 import { History } from "./components/History";
@@ -195,7 +208,7 @@ function Main({ onLogout }: { onLogout(): void }) {
     return () => document.removeEventListener("visibilitychange", fn);
   }, [loadEvents, loadSession]);
 
-  const weekVisible = wide || tab === "week";
+  const weekVisible = wide ? tab === "chat" || tab === "week" : tab === "week";
 
   useEffect(() => {
     if (weekVisible) setUnseenChanges(0);
@@ -362,6 +375,7 @@ function Main({ onLogout }: { onLogout(): void }) {
   const more = (
     <More
       section={moreSection}
+      hideNav={wide}
       onSection={(sec) => {
         setMoreSection(sec);
         if (sec === "history") void loadHistory();
@@ -375,7 +389,7 @@ function Main({ onLogout }: { onLogout(): void }) {
               api.startSession(kind, opt).then((r) => setSession(r.session), (err: Error) => showToast(err.message));
             }}
             onAsk={(t) => {
-              setTab("chat");
+              if (!wide) setTab("chat");
               void send(t, []);
             }}
           />
@@ -386,7 +400,7 @@ function Main({ onLogout }: { onLogout(): void }) {
           <Food
             onToast={showToast}
             onAsk={(t) => {
-              setTab("chat");
+              if (!wide) setTab("chat");
               void send(t, []);
             }}
           />
@@ -399,72 +413,124 @@ function Main({ onLogout }: { onLogout(): void }) {
     <Pendings pendings={pendings} today={today} busy={closing} onClose={closePendingItem} onDelete={deletePendingItem} />
   );
 
+  const todayLong = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: tz }).format(new Date());
+  const voiceBtn = (
+    <button
+      className={`icon-btn ${textOnly ? "" : "on"}`}
+      onClick={toggleTextOnly}
+      aria-pressed={!textOnly}
+      aria-label={textOnly ? "Activar la voz" : "Pasar a solo texto"}
+      title={textOnly ? "Solo texto: sin voz ni sonido" : "Voz activada"}
+    >
+      {textOnly ? <VolumeX size={20} strokeWidth={1.75} /> : <Volume2 size={20} strokeWidth={1.75} />}
+    </button>
+  );
+  const settingsBtn = (
+    <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Ajustes">
+      <Settings2 size={20} strokeWidth={1.75} />
+    </button>
+  );
+
+  const deskView: "week" | "pendings" | MoreSection = tab === "pendings" ? "pendings" : tab === "more" ? moreSection : "week";
+  const goDesk = (v: "week" | "pendings" | MoreSection) => {
+    if (v === "week") setTab("week");
+    else if (v === "pendings") setTab("pendings");
+    else {
+      setMoreSection(v);
+      setTab("more");
+      if (v === "history") void loadHistory();
+    }
+  };
+  const NAV: { key: "week" | "pendings" | MoreSection; label: string; icon: typeof CalendarDays; badge?: number }[] = [
+    { key: "week", label: "Semana", icon: CalendarDays, badge: unseenChanges },
+    { key: "pendings", label: "Pendientes", icon: ListChecks, badge: todayCount },
+    { key: "money", label: "Dinero", icon: Wallet },
+    { key: "food", label: "Comida", icon: UtensilsCrossed },
+    { key: "wellbeing", label: "Bienestar", icon: Leaf },
+    { key: "history", label: "Historial", icon: History_ },
+  ];
+  const TITLES: Record<Tab, string> = { chat: "Marlon", week: "Semana", pendings: "Pendientes", more: "Más" };
+  const MOBILE_TABS: { key: Tab; label: string; icon: typeof CalendarDays; badge?: number }[] = [
+    { key: "chat", label: "Chat", icon: MessageCircle },
+    { key: "week", label: "Semana", icon: CalendarDays, badge: unseenChanges },
+    { key: "pendings", label: "Pendientes", icon: ListChecks, badge: todayCount },
+    { key: "more", label: "Más", icon: LayoutGrid },
+  ];
+
   return (
     <div className={`app ${wide ? "wide" : "narrow"}`}>
-      <header className="topbar">
-        <h1>Marlon</h1>
-        {!wide && (
-          <nav className="tabs" role="tablist">
-            <button role="tab" aria-selected={tab === "chat"} onClick={() => setTab("chat")}>Chat</button>
-            <button role="tab" aria-selected={tab === "week"} onClick={() => setTab("week")}>
-              Semana{unseenChanges > 0 && <span className="pill">{unseenChanges}</span>}
-            </button>
-            <button role="tab" aria-selected={tab === "pendings"} onClick={() => setTab("pendings")}>
-              Pendientes{todayCount > 0 && <span className="pill">{todayCount}</span>}
-            </button>
-            <button role="tab" aria-selected={tab === "more"} onClick={() => setTab("more")}>Más</button>
-          </nav>
-        )}
-        <div className="topbar-actions">
-          <button
-            className={`text-only ${textOnly ? "on" : ""}`}
-            onClick={toggleTextOnly}
-            aria-pressed={textOnly}
-            title={textOnly ? "Modo solo texto: sin voz ni sonido" : "Voz activada"}
-          >
-            {textOnly ? "🔇" : "🔊"}
-            {wide && <span>{textOnly ? " Solo texto" : " Voz"}</span>}
-          </button>
-          {wide && (
-            <>
-              <button className="icon-btn" onClick={() => setTab(tab === "pendings" ? "chat" : "pendings")} aria-label="Pendientes">
-                ☑
-              </button>
-              <button className="icon-btn" onClick={() => setTab(tab === "more" ? "chat" : "more")} aria-label="Dinero, comida e historial">
-                ☰
-              </button>
-            </>
-          )}
-          {backend === "local" && wide && <span className="badge local small" title="Sin Google Calendar">local</span>}
-          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Ajustes">⚙</button>
-        </div>
-      </header>
-
-      <main className="panes" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        {wide ? (
-          <>
-            <div className="pane pane-chat">
-              {chat}
+      {wide ? (
+        <>
+          <aside className="sidebar">
+            <div className="brand">
+              <span className="brand-mark" aria-hidden>M</span>
+              <span className="brand-name">Marlon</span>
             </div>
-            <div className="pane pane-week">{calendar}</div>
-            {tab === "more" && <aside className="pane pane-history">{more}</aside>}
-            {tab === "pendings" && <aside className="pane pane-history">{pendingList}</aside>}
-          </>
-        ) : (
-          <>
-            <div className="pane" hidden={tab !== "chat"}>
-              {chat}
+            <nav className="nav" aria-label="Secciones">
+              {NAV.map(({ key, label, icon: Icon, badge }) => (
+                <button key={key} aria-current={deskView === key ? "page" : undefined} onClick={() => goDesk(key)}>
+                  <Icon size={18} strokeWidth={1.75} />
+                  {label}
+                  {badge ? <span className="pill">{badge}</span> : null}
+                </button>
+              ))}
+            </nav>
+            <div className="sidebar-foot nav">
+              <button onClick={toggleTextOnly} aria-pressed={!textOnly}>
+                {textOnly ? <VolumeX size={18} strokeWidth={1.75} /> : <Volume2 size={18} strokeWidth={1.75} />}
+                {textOnly ? "Solo texto" : "Voz activada"}
+              </button>
+              <button onClick={() => setShowSettings(true)}>
+                <Settings2 size={18} strokeWidth={1.75} />
+                Ajustes
+              </button>
+              <div className="sidebar-status">
+                <span className={`badge ${backend === "google" ? "ok" : "warn"}`}>
+                  {backend === "google" ? "Google Calendar" : "Calendario local"}
+                </span>
+              </div>
             </div>
+          </aside>
+          <section className="chat-col" aria-label="Conversación">
+            <header className="chat-col-head">
+              <span className="eyebrow">Hoy</span>
+              <h2>{todayLong}</h2>
+            </header>
+            {chat}
+          </section>
+          <main className="main-col">
+            {deskView === "week" ? calendar : deskView === "pendings" ? pendingList : more}
+          </main>
+        </>
+      ) : (
+        <>
+          <header className="appbar">
+            <div className="appbar-title">
+              {tab === "chat" && <span className="eyebrow">{todayLong}</span>}
+              <h1>{TITLES[tab]}</h1>
+            </div>
+            <div className="appbar-actions">
+              {voiceBtn}
+              {settingsBtn}
+            </div>
+          </header>
+          <main className="panes" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+            <div className="pane" hidden={tab !== "chat"}>{chat}</div>
             <div className="pane" hidden={tab !== "week"}>{calendar}</div>
-            <div className="pane" hidden={tab !== "pendings"}>
-              {pendingList}
-            </div>
-            <div className="pane" hidden={tab !== "more"}>
-              {more}
-            </div>
-          </>
-        )}
-      </main>
+            <div className="pane" hidden={tab !== "pendings"}>{pendingList}</div>
+            <div className="pane" hidden={tab !== "more"}>{more}</div>
+          </main>
+          <nav className="tabbar" role="tablist" aria-label="Secciones">
+            {MOBILE_TABS.map(({ key, label, icon: Icon, badge }) => (
+              <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
+                <Icon size={23} strokeWidth={tab === key ? 2 : 1.6} />
+                {label}
+                {badge ? <span className="pill">{badge}</span> : null}
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
 
       {!wide && unseenChanges > 0 && tab === "chat" && (
         <button className="toast action" onClick={() => setTab("week")}>
@@ -493,6 +559,7 @@ function Main({ onLogout }: { onLogout(): void }) {
           onClose={() => setShowSettings(false)}
           onLogout={onLogout}
           onSave={saveSettingsPatch}
+          onCalendarChanged={() => void Promise.all([loadEvents({ markChanges: true }), loadHistory()])}
           onSyncUniversity={async () => {
             const r = await api.syncUniversity();
             await Promise.all([loadEvents({ markChanges: true }), loadHistory()]);

@@ -1,4 +1,5 @@
 import type { ChangeLogEntry } from "@marlon/shared";
+import { ArrowLeftRight, Layers, Pencil, Plus, Trash2, History as HistoryIcon, type LucideIcon } from "lucide-react";
 import { useMemo } from "react";
 
 interface Props {
@@ -7,7 +8,7 @@ interface Props {
   onUndo(id: string): void;
 }
 
-const ICON: Record<ChangeLogEntry["action"], string> = { create: "＋", move: "⇄", update: "✎", delete: "✕" };
+const ICON: Record<ChangeLogEntry["action"], LucideIcon> = { create: Plus, move: ArrowLeftRight, update: Pencil, delete: Trash2 };
 
 /** Agrupa los cambios de un mismo grupo (p. ej. una importación de horario). */
 function group(entries: ChangeLogEntry[]) {
@@ -26,45 +27,52 @@ export function History({ entries, busy, onUndo }: Props) {
 
   return (
     <section className="history" aria-label="Historial de cambios">
-      <h2>Historial</h2>
-      {groups.length === 0 && <p className="muted">Aún no hay cambios.</p>}
-      <ul>
-        {groups.map(({ key, items }) => {
-          const head = items[0]!;
-          const undone = items.every((i) => i.undoneAt);
-          return (
-            <li key={key} className={undone ? "undone" : ""}>
-              <div className="history-main">
-                <span className="history-icon" aria-hidden>
-                  {items.length > 1 ? "▤" : ICON[head.action]}
-                </span>
-                <div>
-                  {items.length > 1 ? (
-                    <details>
-                      <summary>{items.length} cambios a la vez</summary>
-                      <ul className="history-sub">
-                        {items.map((i) => (
-                          <li key={i.id}>{i.summary}</li>
-                        ))}
-                      </ul>
-                    </details>
+      <div className="stack">
+        {groups.length === 0 ? (
+          <div className="empty">
+            <HistoryIcon size={28} strokeWidth={1.5} />
+            <h3>Sin cambios todavía</h3>
+            <p>Cada cambio que haga Marlon en tu calendario aparecerá aquí y podrás deshacerlo.</p>
+          </div>
+        ) : (
+          <ul className="list">
+            {groups.map(({ key, items }) => {
+              const head = items[0]!;
+              const undone = items.every((i) => i.undoneAt);
+              const Icon = items.length > 1 ? Layers : ICON[head.action];
+              return (
+                <li key={key} className={undone ? "undone" : ""}>
+                  <span className="list-lead" aria-hidden>
+                    <Icon size={16} strokeWidth={1.75} />
+                  </span>
+                  <div className="list-main">
+                    {items.length > 1 ? (
+                      <details>
+                        <summary>{items.length} cambios a la vez</summary>
+                        <ul className="history-sub">
+                          {items.map((i) => (
+                            <li key={i.id}>{i.summary}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : (
+                      <p>{head.summary}</p>
+                    )}
+                    <div className="meta">{fmt.format(new Date(head.createdAt))}</div>
+                  </div>
+                  {undone ? (
+                    <span className="muted small">Deshecho</span>
                   ) : (
-                    <p>{head.summary}</p>
+                    <button className="btn ghost small" disabled={busy !== null} onClick={() => onUndo(head.id)}>
+                      {busy === head.id ? "…" : "Deshacer"}
+                    </button>
                   )}
-                  <time className="muted">{fmt.format(new Date(head.createdAt))}</time>
-                </div>
-              </div>
-              {undone ? (
-                <span className="muted small">Deshecho</span>
-              ) : (
-                <button className="btn ghost small" disabled={busy !== null} onClick={() => onUndo(head.id)}>
-                  {busy === head.id ? "…" : "Deshacer"}
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

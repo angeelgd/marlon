@@ -1,3 +1,4 @@
+import { ChefHat } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type FoodData } from "../lib/api";
 
@@ -25,7 +26,7 @@ export function Food({ onAsk, onToast }: Props) {
     void load();
   }, [load]);
 
-  if (!data) return <section className="food"><p className="muted">Cargando…</p></section>;
+  if (!data) return <section className="food"><p className="muted small">Cargando…</p></section>;
   const plan = data.plan;
 
   async function toggle(name: string, checked: boolean) {
@@ -46,14 +47,23 @@ export function Food({ onAsk, onToast }: Props) {
 
   return (
     <section className="food" aria-label="Comida">
-      <div className="actions-row">
-        <button className="btn small" onClick={() => onAsk("Propónme vídeos de batch cooking para esta semana")}>Buscar ideas de batch cooking</button>
-        {data.recipes.length > 0 && (
-          <button className="btn ghost small" onClick={() => onAsk("Hazme el menú y la lista de la compra con las últimas recetas")}>Rehacer el menú</button>
-        )}
-      </div>
-
-      {!plan && <p className="muted">Aún no hay menú. Pídeme ideas de batch cooking y te armo el menú y la lista de la compra.</p>}
+      {!plan ? (
+        <div className="empty">
+          <ChefHat size={28} strokeWidth={1.5} />
+          <h3>Sin menú esta semana</h3>
+          <p>Marlon busca vídeos de batch cooking, arma el menú según tus turnos y prepara la lista de la compra.</p>
+          <div className="actions-row" style={{ justifyContent: "center", marginTop: 18 }}>
+            <button className="btn" onClick={() => onAsk("Propónme vídeos de batch cooking para esta semana")}>Buscar ideas</button>
+          </div>
+        </div>
+      ) : (
+        <div className="actions-row">
+          <button className="btn small" onClick={() => onAsk("Propónme vídeos de batch cooking para esta semana")}>Buscar ideas de batch cooking</button>
+          {data.recipes.length > 0 && (
+            <button className="btn ghost small" onClick={() => onAsk("Hazme el menú y la lista de la compra con las últimas recetas")}>Rehacer el menú</button>
+          )}
+        </div>
+      )}
 
       {plan && (
         <>
@@ -64,8 +74,8 @@ export function Food({ onAsk, onToast }: Props) {
               {plan.plan.days.map((d) => (
                 <li key={d.date}>
                   <b>{dayLabel(d.date)}</b>
-                  <span className="small">Comida: {d.lunch ? `${d.lunch.recipe}${d.lunch.fromFreezer ? " ❄" : ""}` : "libre"}</span>
-                  <span className="small">Cena: {d.dinner ? `${d.dinner.recipe}${d.dinner.fromFreezer ? " ❄" : ""}` : "libre"}</span>
+                  <span className="small">Comida: {d.lunch ? `${d.lunch.recipe}${d.lunch.fromFreezer ? " (del congelador)" : ""}` : "libre"}</span>
+                  <span className="small">Cena: {d.dinner ? `${d.dinner.recipe}${d.dinner.fromFreezer ? " (del congelador)" : ""}` : "libre"}</span>
                   {d.note && <span className="small tip">{d.note}</span>}
                 </li>
               ))}

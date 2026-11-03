@@ -128,7 +128,7 @@ describe("herramientas de la fase 2", () => {
   it("import_university_calendar sin URL explica qué falta", async () => {
     const ctx = testCtx(testEnv(), SUNDAY);
     const r = await executeTool(PHASE2_TOOLS, "import_university_calendar", "{}", ctx);
-    expect(r).toMatchObject({ ok: false, hint: expect.stringContaining("UNIVERSITY_ICAL_URL") });
+    expect(r).toMatchObject({ ok: false, hint: expect.stringContaining("Ajustes") });
   });
 
   it("get_route necesita evento o destino y hora", async () => {
